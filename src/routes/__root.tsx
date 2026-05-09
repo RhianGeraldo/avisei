@@ -78,7 +78,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Avisei — Mensageria Inteligente" },
       {
         name: "description",
-        content: "Avisei: Plataforma de mensageria WhatsApp automatizada para clínicas e unidades.",
+        content: "Avisei: Plataforma de mensageria WhatsApp automatizada.",
       },
       { property: "og:title", content: "Avisei — Mensageria Inteligente" },
       {
