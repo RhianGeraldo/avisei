@@ -18,6 +18,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as InstancesRouteImport } from './routes/instances'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CronTriggerRouteImport } from './routes/cron-trigger'
 import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UnitsUnitIdRouteImport } from './routes/units_.$unitId'
@@ -67,6 +68,11 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CronTriggerRoute = CronTriggerRouteImport.update({
+  id: '/cron-trigger',
+  path: '/cron-trigger',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AutomationsRoute = AutomationsRouteImport.update({
   id: '/automations',
   path: '/automations',
@@ -86,6 +92,7 @@ const UnitsUnitIdRoute = UnitsUnitIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/automations': typeof AutomationsRoute
+  '/cron-trigger': typeof CronTriggerRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
   '/instances': typeof InstancesRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/automations': typeof AutomationsRoute
+  '/cron-trigger': typeof CronTriggerRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
   '/instances': typeof InstancesRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/automations': typeof AutomationsRoute
+  '/cron-trigger': typeof CronTriggerRoute
   '/dashboard': typeof DashboardRoute
   '/history': typeof HistoryRoute
   '/instances': typeof InstancesRoute
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/automations'
+    | '/cron-trigger'
     | '/dashboard'
     | '/history'
     | '/instances'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/automations'
+    | '/cron-trigger'
     | '/dashboard'
     | '/history'
     | '/instances'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/automations'
+    | '/cron-trigger'
     | '/dashboard'
     | '/history'
     | '/instances'
@@ -174,6 +186,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AutomationsRoute: typeof AutomationsRoute
+  CronTriggerRoute: typeof CronTriggerRoute
   DashboardRoute: typeof DashboardRoute
   HistoryRoute: typeof HistoryRoute
   InstancesRoute: typeof InstancesRoute
@@ -251,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cron-trigger': {
+      id: '/cron-trigger'
+      path: '/cron-trigger'
+      fullPath: '/cron-trigger'
+      preLoaderRoute: typeof CronTriggerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/automations': {
       id: '/automations'
       path: '/automations'
@@ -278,6 +298,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AutomationsRoute: AutomationsRoute,
+  CronTriggerRoute: CronTriggerRoute,
   DashboardRoute: DashboardRoute,
   HistoryRoute: HistoryRoute,
   InstancesRoute: InstancesRoute,
