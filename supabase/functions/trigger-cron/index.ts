@@ -9,10 +9,14 @@ serve(async (req) => {
   console.log(`[cron-trigger] Iniciando chamada para ${APP_URL}`);
 
   try {
-    const res = await fetch(APP_URL, {
-      method: "POST",
+    const url = new URL(APP_URL);
+    url.searchParams.set("secret", CRON_SECRET || "");
+
+    console.log(`[cron-trigger] Chamando: ${url.toString()}`);
+
+    const res = await fetch(url.toString(), {
+      method: "GET",
       headers: {
-        "Authorization": `Bearer ${CRON_SECRET}`,
         "Content-Type": "application/json"
       }
     });
