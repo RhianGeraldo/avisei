@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "NITRO_PRESET=node-server vite build",
-    "start": "node .output/server/index.mjs",
+    "build": "vite build",
+    "start": "node dist/server/server.js",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",

@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'avisei',
-      script: '.output/server/index.mjs',
+      script: 'dist/server/server.js',
       instances: 'max',
       exec_mode: 'cluster',
       env: {
