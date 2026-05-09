@@ -81,12 +81,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "Avisei: Plataforma de mensageria WhatsApp automatizada.",
       },
       { property: "og:title", content: "Avisei — Mensageria Inteligente" },
+      { property: "og:url", content: "https://avisei.erriesse.com" },
       {
         property: "og:description",
         content: "Mensageria WhatsApp automatizada e inteligente para sua empresa.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:domain", content: "avisei.erriesse.com" },
+      { name: "twitter:url", content: "https://avisei.erriesse.com" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

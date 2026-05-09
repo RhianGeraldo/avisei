@@ -4,7 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 serve(async (req) => {
   const CRON_SECRET = Deno.env.get("CRON_SECRET");
   // O ideal é que esta URL venha de uma variável de ambiente também
-  const APP_URL = Deno.env.get("APP_URL") || "https://avisei.vercel.app/api/cron";
+  const APP_URL = Deno.env.get("APP_URL") || "https://avisei.erriesse.com/cron-trigger";
 
   console.log(`[cron-trigger] Iniciando chamada para ${APP_URL}`);
 
