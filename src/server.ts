@@ -77,17 +77,4 @@ export default {
       return brandedErrorResponse();
     }
   },
-  async scheduled(_event: unknown, _env: unknown, ctx: { waitUntil(p: Promise<unknown>): void }) {
-    ctx.waitUntil(
-      (async () => {
-        try {
-          const { runCronTick } = await import("./lib/cron");
-          const result = await runCronTick();
-          console.log(`[cron] tick: ${result.ran} jobs executados`, result.results);
-        } catch (err) {
-          console.error("[cron] tick falhou", err);
-        }
-      })(),
-    );
-  },
 };
