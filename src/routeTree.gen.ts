@@ -11,12 +11,16 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UnitsRouteImport } from './routes/units'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as InstancesRouteImport } from './routes/instances'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as CompaniesRouteImport } from './routes/companies'
+import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as UnitsUnitIdRouteImport } from './routes/units.$unitId'
+import { Route as UnitsUnitIdRouteImport } from './routes/units_.$unitId'
 
 const UnitsRoute = UnitsRouteImport.update({
   id: '/units',
@@ -28,9 +32,19 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MessagesRoute = MessagesRouteImport.update({
   id: '/messages',
   path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManagerRoute = ManagerRouteImport.update({
+  id: '/manager',
+  path: '/manager',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -38,14 +52,24 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InstancesRoute = InstancesRouteImport.update({
+  id: '/instances',
+  path: '/instances',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CompaniesRoute = CompaniesRouteImport.update({
-  id: '/companies',
-  path: '/companies',
+const AutomationsRoute = AutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -54,83 +78,112 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const UnitsUnitIdRoute = UnitsUnitIdRouteImport.update({
-  id: '/$unitId',
-  path: '/$unitId',
-  getParentRoute: () => UnitsRoute,
+  id: '/units_/$unitId',
+  path: '/units/$unitId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/companies': typeof CompaniesRoute
+  '/automations': typeof AutomationsRoute
   '/dashboard': typeof DashboardRoute
+  '/history': typeof HistoryRoute
+  '/instances': typeof InstancesRoute
   '/login': typeof LoginRoute
+  '/manager': typeof ManagerRoute
   '/messages': typeof MessagesRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
-  '/units': typeof UnitsRouteWithChildren
+  '/units': typeof UnitsRoute
   '/units/$unitId': typeof UnitsUnitIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/companies': typeof CompaniesRoute
+  '/automations': typeof AutomationsRoute
   '/dashboard': typeof DashboardRoute
+  '/history': typeof HistoryRoute
+  '/instances': typeof InstancesRoute
   '/login': typeof LoginRoute
+  '/manager': typeof ManagerRoute
   '/messages': typeof MessagesRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
-  '/units': typeof UnitsRouteWithChildren
+  '/units': typeof UnitsRoute
   '/units/$unitId': typeof UnitsUnitIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/companies': typeof CompaniesRoute
+  '/automations': typeof AutomationsRoute
   '/dashboard': typeof DashboardRoute
+  '/history': typeof HistoryRoute
+  '/instances': typeof InstancesRoute
   '/login': typeof LoginRoute
+  '/manager': typeof ManagerRoute
   '/messages': typeof MessagesRoute
+  '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
-  '/units': typeof UnitsRouteWithChildren
-  '/units/$unitId': typeof UnitsUnitIdRoute
+  '/units': typeof UnitsRoute
+  '/units_/$unitId': typeof UnitsUnitIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/companies'
+    | '/automations'
     | '/dashboard'
+    | '/history'
+    | '/instances'
     | '/login'
+    | '/manager'
     | '/messages'
+    | '/settings'
     | '/signup'
     | '/units'
     | '/units/$unitId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/companies'
+    | '/automations'
     | '/dashboard'
+    | '/history'
+    | '/instances'
     | '/login'
+    | '/manager'
     | '/messages'
+    | '/settings'
     | '/signup'
     | '/units'
     | '/units/$unitId'
   id:
     | '__root__'
     | '/'
-    | '/companies'
+    | '/automations'
     | '/dashboard'
+    | '/history'
+    | '/instances'
     | '/login'
+    | '/manager'
     | '/messages'
+    | '/settings'
     | '/signup'
     | '/units'
-    | '/units/$unitId'
+    | '/units_/$unitId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  CompaniesRoute: typeof CompaniesRoute
+  AutomationsRoute: typeof AutomationsRoute
   DashboardRoute: typeof DashboardRoute
+  HistoryRoute: typeof HistoryRoute
+  InstancesRoute: typeof InstancesRoute
   LoginRoute: typeof LoginRoute
+  ManagerRoute: typeof ManagerRoute
   MessagesRoute: typeof MessagesRoute
+  SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
-  UnitsRoute: typeof UnitsRouteWithChildren
+  UnitsRoute: typeof UnitsRoute
+  UnitsUnitIdRoute: typeof UnitsUnitIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -149,11 +202,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/messages': {
       id: '/messages'
       path: '/messages'
       fullPath: '/messages'
       preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manager': {
+      id: '/manager'
+      path: '/manager'
+      fullPath: '/manager'
+      preLoaderRoute: typeof ManagerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -163,6 +230,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/instances': {
+      id: '/instances'
+      path: '/instances'
+      fullPath: '/instances'
+      preLoaderRoute: typeof InstancesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -170,11 +251,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/companies': {
-      id: '/companies'
-      path: '/companies'
-      fullPath: '/companies'
-      preLoaderRoute: typeof CompaniesRouteImport
+    '/automations': {
+      id: '/automations'
+      path: '/automations'
+      fullPath: '/automations'
+      preLoaderRoute: typeof AutomationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -184,35 +265,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/units/$unitId': {
-      id: '/units/$unitId'
-      path: '/$unitId'
+    '/units_/$unitId': {
+      id: '/units_/$unitId'
+      path: '/units/$unitId'
       fullPath: '/units/$unitId'
       preLoaderRoute: typeof UnitsUnitIdRouteImport
-      parentRoute: typeof UnitsRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
 
-interface UnitsRouteChildren {
-  UnitsUnitIdRoute: typeof UnitsUnitIdRoute
-}
-
-const UnitsRouteChildren: UnitsRouteChildren = {
-  UnitsUnitIdRoute: UnitsUnitIdRoute,
-}
-
-const UnitsRouteWithChildren = UnitsRoute._addFileChildren(UnitsRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  CompaniesRoute: CompaniesRoute,
+  AutomationsRoute: AutomationsRoute,
   DashboardRoute: DashboardRoute,
+  HistoryRoute: HistoryRoute,
+  InstancesRoute: InstancesRoute,
   LoginRoute: LoginRoute,
+  ManagerRoute: ManagerRoute,
   MessagesRoute: MessagesRoute,
+  SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
-  UnitsRoute: UnitsRouteWithChildren,
+  UnitsRoute: UnitsRoute,
+  UnitsUnitIdRoute: UnitsUnitIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

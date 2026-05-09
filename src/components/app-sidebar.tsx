@@ -1,5 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Building2, Store, MessageSquareMore, LogOut, Sparkles } from "lucide-react";
+import {
+  LayoutDashboard,
+  Store,
+  MessageSquareMore,
+  Smartphone,
+  Clock,
+  Inbox,
+  History,
+  Settings,
+  LogOut,
+  Sparkles,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -22,12 +33,19 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const { roles, signOut, user } = useAuth();
   const isSuper = roles.includes("super_admin");
+  const isCompanyAdmin = roles.includes("company_admin");
 
   const items = [
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-    ...(isSuper ? [{ title: "Empresas", url: "/companies", icon: Building2 }] : []),
     { title: "Unidades", url: "/units", icon: Store },
+    { title: "Instâncias", url: "/instances", icon: Smartphone },
     { title: "Mensagens", url: "/messages", icon: MessageSquareMore },
+    { title: "Automações", url: "/automations", icon: Clock },
+    { title: "Gerenciador", url: "/manager", icon: Inbox },
+    { title: "Histórico", url: "/history", icon: History },
+    ...(isSuper || isCompanyAdmin
+      ? [{ title: "Configurações", url: "/settings", icon: Settings }]
+      : []),
   ];
 
   return (
@@ -39,7 +57,7 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-display font-semibold leading-none">Belle</span>
+              <span className="font-display font-semibold leading-none">Avisei</span>
               <span className="text-xs text-muted-foreground">Messaging</span>
             </div>
           )}

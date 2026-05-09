@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { AppLayout } from "@/components/app-layout";
@@ -7,34 +7,69 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 export const Route = createFileRoute("/units")({ component: UnitsPage });
 
-type Unit = { id: string; company_id: string; name: string; belle_token: string | null; belle_base_url: string | null; active: boolean };
+type Unit = {
+  id: string;
+  company_id: string;
+  name: string;
+  belle_token: string | null;
+  belle_base_url: string | null;
+  belle_cod_estab: string | null;
+  active: boolean;
+};
+type UnitInsert = Database["public"]["Tables"]["units"]["Insert"];
+type UnitUpdate = Database["public"]["Tables"]["units"]["Update"];
+
+async function resolveCompanyId(authCompanyId: string | null): Promise<string> {
+  if (authCompanyId) return authCompanyId;
+  // Sem empresa no perfil — pega a primeira existente, ou cria uma padrão.
+  const { data: existing } = await supabase
+    .from("companies")
+    .select("id")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+  const { data: created, error } = await supabase
+    .from("companies")
+    .insert({ name: "Padrão" })
+    .select("id")
+    .single();
+  if (error) throw new Error(`Falha ao criar empresa padrão: ${error.message}`);
+  return created.id;
+}
 
 function UnitsPage() {
-  const { roles, companyId } = useAuth();
-  const isSuper = roles.includes("super_admin");
+  const navigate = useNavigate();
+  const { companyId } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Unit | null>(null);
-  const [selectedCompany, setSelectedCompany] = useState<string>("");
-
-  const { data: companies = [] } = useQuery({
-    queryKey: ["companies-list"],
-    queryFn: async () => {
-      const { data } = await supabase.from("companies").select("id, name").order("name");
-      return data ?? [];
-    },
-  });
 
   const { data: units = [], isLoading } = useQuery({
     queryKey: ["units"],
@@ -45,60 +80,114 @@ function UnitsPage() {
     },
   });
 
-  const companyMap = Object.fromEntries(companies.map((c) => [c.id, c.name]));
-
   const onSubmit = async (form: FormData) => {
-    const company_id = isSuper ? String(form.get("company_id") ?? "") : companyId;
-    if (!company_id) { toast.error("Empresa obrigatória"); return; }
-    const payload = {
+    const tokenInput = String(form.get("belle_token") ?? "").trim();
+    const codEstabInput = String(form.get("belle_cod_estab") ?? "").trim();
+    const name = String(form.get("name") ?? "").trim();
+    if (!name) {
+      toast.error("Nome obrigatório");
+      return;
+    }
+
+    let company_id: string;
+    try {
+      company_id = editing?.company_id ?? (await resolveCompanyId(companyId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao resolver empresa");
+      return;
+    }
+
+    // Em edição, token em branco preserva o existente (evita sobrescrever secret).
+    const base = {
       company_id,
-      name: String(form.get("name") ?? "").trim(),
-      belle_token: String(form.get("belle_token") ?? "").trim() || null,
-      belle_base_url: String(form.get("belle_base_url") ?? "").trim() || null,
+      name,
       active: form.get("active") === "on",
+      belle_cod_estab: codEstabInput || null,
     };
-    if (!payload.name) { toast.error("Nome obrigatório"); return; }
+
+    const updatePayload: UnitUpdate = { ...base };
+    if (tokenInput) updatePayload.belle_token = tokenInput;
+
+    const insertPayload: UnitInsert = {
+      ...base,
+      belle_token: tokenInput || null,
+    };
 
     const res = editing
-      ? await supabase.from("units").update(payload).eq("id", editing.id)
-      : await supabase.from("units").insert(payload);
+      ? await supabase.from("units").update(updatePayload).eq("id", editing.id)
+      : await supabase.from("units").insert(insertPayload);
     if (res.error) toast.error(res.error.message);
-    else { toast.success(editing ? "Atualizada" : "Criada"); setOpen(false); setEditing(null); setSelectedCompany(""); qc.invalidateQueries({ queryKey: ["units"] }); }
+    else {
+      toast.success(editing ? "Atualizada" : "Criada");
+      setOpen(false);
+      setEditing(null);
+      qc.invalidateQueries({ queryKey: ["units"] });
+    }
   };
 
   const onDelete = async (id: string) => {
-    if (!confirm("Excluir esta unidade?")) return;
     const { error } = await supabase.from("units").delete().eq("id", id);
     if (error) toast.error(error.message);
-    else { toast.success("Excluída"); qc.invalidateQueries({ queryKey: ["units"] }); }
+    else {
+      toast.success("Excluída");
+      qc.invalidateQueries({ queryKey: ["units"] });
+    }
   };
 
   return (
     <AppLayout title="Unidades">
       <div className="flex items-center justify-between mb-4">
         <p className="text-muted-foreground">Unidades cadastradas no Belle Software.</p>
-        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setEditing(null); setSelectedCompany(""); } }}>
-          <DialogTrigger asChild><Button><Plus className="h-4 w-4 mr-1" />Nova unidade</Button></DialogTrigger>
+        <Dialog
+          open={open}
+          onOpenChange={(o) => {
+            setOpen(o);
+            if (!o) setEditing(null);
+          }}
+        >
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-1" />
+              Nova unidade
+            </Button>
+          </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>{editing ? "Editar unidade" : "Nova unidade"}</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>{editing ? "Editar unidade" : "Nova unidade"}</DialogTitle>
+            </DialogHeader>
             <form action={onSubmit} className="space-y-4">
-              {isSuper && (
-                <div className="space-y-2">
-                  <Label>Empresa</Label>
-                  <Select name="company_id" defaultValue={editing?.company_id ?? selectedCompany} onValueChange={setSelectedCompany}>
-                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>
-                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <input type="hidden" name="company_id" value={editing?.company_id ?? selectedCompany} />
-                </div>
-              )}
-              <div className="space-y-2"><Label>Nome da unidade</Label><Input name="name" required defaultValue={editing?.name} /></div>
-              <div className="space-y-2"><Label>Token Belle</Label><Input name="belle_token" defaultValue={editing?.belle_token ?? ""} placeholder="Token de acesso à API do Belle" /></div>
-              <div className="space-y-2"><Label>URL base Belle</Label><Input name="belle_base_url" defaultValue={editing?.belle_base_url ?? ""} placeholder="https://api.bellesoftware.com.br" /></div>
-              <div className="flex items-center gap-2"><Switch name="active" defaultChecked={editing?.active ?? true} id="active" /><Label htmlFor="active">Ativa</Label></div>
-              <DialogFooter><Button type="submit">Salvar</Button></DialogFooter>
+              <div className="space-y-2">
+                <Label>Nome da unidade</Label>
+                <Input name="name" required defaultValue={editing?.name} />
+              </div>
+              <div className="space-y-2">
+                <Label>Token Belle</Label>
+                <Input
+                  name="belle_token"
+                  type="password"
+                  autoComplete="off"
+                  placeholder={
+                    editing?.belle_token
+                      ? "•••••• (deixe em branco para manter)"
+                      : "Token de acesso à API do Belle"
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Código do estabelecimento</Label>
+                <Input
+                  name="belle_cod_estab"
+                  defaultValue={editing?.belle_cod_estab ?? ""}
+                  placeholder="codEstab no Belle Software"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch name="active" defaultChecked={editing?.active ?? true} id="active" />
+                <Label htmlFor="active">Ativa</Label>
+              </div>
+              <DialogFooter>
+                <Button type="submit">Salvar</Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -106,23 +195,69 @@ function UnitsPage() {
 
       <Card className="glass">
         <Table>
-          <TableHeader><TableRow><TableHead>Nome</TableHead>{isSuper && <TableHead>Empresa</TableHead>}<TableHead>Token Belle</TableHead><TableHead>Status</TableHead><TableHead className="w-40 text-right">Ações</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Token Belle</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-40 text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {isLoading ? <TableRow><TableCell colSpan={5}>Carregando...</TableCell></TableRow>
-              : units.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhuma unidade cadastrada</TableCell></TableRow>
-              : units.map((u) => (
-                <TableRow key={u.id}>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={4}>Carregando...</TableCell>
+              </TableRow>
+            ) : units.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                  Nenhuma unidade cadastrada
+                </TableCell>
+              </TableRow>
+            ) : (
+              units.map((u) => (
+                <TableRow
+                  key={u.id}
+                  className="cursor-pointer hover:bg-muted/40"
+                  onClick={() => navigate({ to: "/units/$unitId", params: { unitId: u.id } })}
+                >
                   <TableCell className="font-medium">{u.name}</TableCell>
-                  {isSuper && <TableCell className="text-muted-foreground">{companyMap[u.company_id] ?? "—"}</TableCell>}
-                  <TableCell className="font-mono text-xs text-muted-foreground">{u.belle_token ? `${u.belle_token.slice(0, 8)}…` : "—"}</TableCell>
-                  <TableCell>{u.active ? <Badge>Ativa</Badge> : <Badge variant="secondary">Inativa</Badge>}</TableCell>
-                  <TableCell className="text-right">
-                    <Button size="icon" variant="ghost" asChild><Link to="/units/$unitId" params={{ unitId: u.id }}><ExternalLink className="h-4 w-4" /></Link></Button>
-                    <Button size="icon" variant="ghost" onClick={() => { setEditing(u); setOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => onDelete(u.id)}><Trash2 className="h-4 w-4" /></Button>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {u.belle_token ? `${u.belle_token.slice(0, 8)}…` : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {u.active ? <Badge>Ativa</Badge> : <Badge variant="secondary">Inativa</Badge>}
+                  </TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <Button size="icon" variant="ghost" asChild>
+                      <Link to="/units/$unitId" params={{ unitId: u.id }}>
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditing(u);
+                        setOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <ConfirmDialog
+                      trigger={
+                        <Button size="icon" variant="ghost">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      }
+                      title="Excluir unidade?"
+                      description="Instâncias e mensagens vinculadas serão removidas em cascata."
+                      onConfirm={() => onDelete(u.id)}
+                    />
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+            )}
           </TableBody>
         </Table>
       </Card>

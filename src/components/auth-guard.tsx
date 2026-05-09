@@ -13,7 +13,11 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   }, [user, loading, navigate]);
 
   if (loading) {
-    return <div className="grid min-h-screen place-items-center text-muted-foreground">Carregando...</div>;
+    return (
+      <div className="grid min-h-screen place-items-center text-muted-foreground">
+        Carregando...
+      </div>
+    );
   }
   if (!user) return null;
   return <>{children}</>;

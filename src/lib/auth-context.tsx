@@ -30,15 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from("user_roles").select("role").eq("user_id", uid),
       supabase.from("profiles").select("company_id").eq("id", uid).maybeSingle(),
     ]);
-    setRoles((rolesRes.data?.map((r) => r.role as AppRole)) ?? []);
+    setRoles(rolesRes.data?.map((r) => r.role as AppRole) ?? []);
     setCompanyId(profileRes.data?.company_id ?? null);
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        // Defer to next tick: chamar supabase.from(...) síncrono dentro de
+        // onAuthStateChange causa deadlock no client (issue conhecido).
         setTimeout(() => loadProfile(s.user.id), 0);
       } else {
         setRoles([]);
@@ -82,7 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, roles, companyId, signIn, signUp, signOut, refresh }}>
+    <AuthContext.Provider
+      value={{ user, session, loading, roles, companyId, signIn, signUp, signOut, refresh }}
+    >
       {children}
     </AuthContext.Provider>
   );

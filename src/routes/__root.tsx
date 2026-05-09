@@ -11,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth-context";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 function NotFoundComponent() {
   return (
@@ -74,10 +75,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Belle Software Messaging" },
-      { name: "description", content: "Plataforma multi-tenant de mensageria WhatsApp para o Belle Software." },
-      { property: "og:title", content: "Belle Software Messaging" },
-      { property: "og:description", content: "Mensageria WhatsApp automatizada para clínicas e unidades do Belle Software." },
+      { title: "Avisei — Mensageria Inteligente" },
+      {
+        name: "description",
+        content: "Avisei: Plataforma de mensageria WhatsApp automatizada para clínicas e unidades.",
+      },
+      { property: "og:title", content: "Avisei — Mensageria Inteligente" },
+      {
+        property: "og:description",
+        content: "Mensageria WhatsApp automatizada e inteligente para sua empresa.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -117,8 +124,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
-        <Toaster richColors position="top-right" />
+        <TooltipProvider delayDuration={200}>
+          <Outlet />
+          <Toaster richColors position="top-right" />
+        </TooltipProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

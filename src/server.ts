@@ -12,7 +12,7 @@ let serverEntryPromise: Promise<ServerEntry> | undefined;
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
     serverEntryPromise = import("@tanstack/react-start/server-entry").then(
-      (m) => ((m as { default?: ServerEntry }).default ?? (m as unknown as ServerEntry)),
+      (m) => (m as { default?: ServerEntry }).default ?? (m as unknown as ServerEntry),
     );
   }
   return serverEntryPromise;
@@ -76,5 +76,18 @@ export default {
       console.error(error);
       return brandedErrorResponse();
     }
+  },
+  async scheduled(_event: unknown, _env: unknown, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const { runCronTick } = await import("./lib/cron");
+          const result = await runCronTick();
+          console.log(`[cron] tick: ${result.ran} jobs executados`, result.results);
+        } catch (err) {
+          console.error("[cron] tick falhou", err);
+        }
+      })(),
+    );
   },
 };
