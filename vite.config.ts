@@ -7,4 +7,11 @@ export default defineConfig({
     tanstackStart(),
     tsconfigPaths(),
   ],
+  build: {
+    target: 'esnext',
+    commonjsOptions: {
+      include: [/node_modules/],
+      exclude: [/node_modules\/@tanstack/],
+    }
+  }
 })
