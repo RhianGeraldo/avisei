@@ -188,8 +188,8 @@ export default function AutomationsPage() {
       };
 
       const res = editingCron
-        ? await supabase.from("cron_jobs").update(payload).eq("id", editingCron.id)
-        : await supabase.from("cron_jobs").insert(payload);
+        ? await supabase.from("cron_jobs").update(payload as any).eq("id", editingCron.id)
+        : await supabase.from("cron_jobs").insert(payload as any);
 
       if (res.error) throw new Error(res.error.message);
       toast.success("Salvo com sucesso");
