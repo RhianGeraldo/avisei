@@ -123,7 +123,7 @@ export default function AutomationsPage() {
       setCronStatus((existing as any).status_filter || "any");
       setCronTipo((existing as any).tipo_filter || "any");
       setCronActive(existing.active);
-      setCronInterval(existing.interval_seconds ?? 30);
+      setCronInterval((existing as any).interval_seconds ?? 30);
     } else {
       setSelectedUnits([]);
       setInstanceMapping({});
