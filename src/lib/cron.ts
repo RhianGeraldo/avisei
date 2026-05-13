@@ -121,6 +121,7 @@ async function processCronJobs(supabase: any, onlyJobId?: string) {
               unitId,
               instanceId,
               items: itemsToEnqueue,
+              interval: job.interval_seconds,
             }
           });
           
@@ -155,7 +156,9 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
   console.log(`[worker] Buscando itens pendentes até: ${nowStr}`);
 
   const { data: allPending } = await supabase.from("send_queue").select("id").eq("status", "pending");
-  console.log(`[worker] Total de itens pendentes no banco: ${allPending?.length || 0}`);
+  if (allPending && allPending.length > 0) {
+    console.log(`[worker] Total de itens pendentes no banco: ${allPending.length}`);
+  }
 
   const { data: queue } = await supabase
     .from("send_queue")
@@ -165,11 +168,9 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
     .order("scheduled_at", { ascending: true })
     .limit(20);
 
-  console.log(`[worker] Itens para processar agora: ${queue?.length || 0}`);
-
-  console.log(`[worker] Itens pendentes encontrados: ${queue?.length || 0}`);
-
   if (!queue || queue.length === 0) return { dispatched: 0 };
+
+  console.log(`[worker] Processando lote de ${queue.length} mensagens agora...`);
 
   const affectedCampaigns = new Set<string>();
   let dispatched = 0;

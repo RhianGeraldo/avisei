@@ -102,6 +102,7 @@ export default function AutomationsPage() {
   const [cronStatus, setCronStatus] = useState<string>("any");
   const [cronTipo, setCronTipo] = useState<string>("any");
   const [cronActive, setCronActive] = useState(true);
+  const [cronInterval, setCronInterval] = useState<number>(30);
   const [cronSubmitting, setCronSubmitting] = useState(false);
 
   const availableMessages = messages.filter(
@@ -122,6 +123,7 @@ export default function AutomationsPage() {
       setCronStatus((existing as any).status_filter || "any");
       setCronTipo((existing as any).tipo_filter || "any");
       setCronActive(existing.active);
+      setCronInterval(existing.interval_seconds ?? 30);
     } else {
       setSelectedUnits([]);
       setInstanceMapping({});
@@ -134,6 +136,7 @@ export default function AutomationsPage() {
       setCronStatus("any");
       setCronTipo("any");
       setCronActive(true);
+      setCronInterval(30);
     }
     setCronOpen(true);
   };
@@ -181,6 +184,7 @@ export default function AutomationsPage() {
         status_filter: cronStatus === "any" ? null : cronStatus,
         tipo_filter: cronTipo === "any" ? null : cronTipo,
         active: cronActive,
+        interval_seconds: cronInterval,
       };
 
       const res = editingCron
@@ -462,6 +466,10 @@ export default function AutomationsPage() {
                 <div className="space-y-2">
                   <Label>Horário de Execução</Label>
                   <Input type="time" value={cronTime} onChange={e => setCronTime(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Intervalo entre mensagens (seg)</Label>
+                  <Input type="number" value={cronInterval} onChange={e => setCronInterval(parseInt(e.target.value))} min={5} />
                 </div>
               </div>
 
