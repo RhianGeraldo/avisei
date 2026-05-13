@@ -232,6 +232,7 @@ export default function AutomationsPage() {
               <TableHead>Unidades</TableHead>
               <TableHead>Horário</TableHead>
               <TableHead>Janela</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Ativa</TableHead>
               <TableHead className="text-right px-6">Ações</TableHead>
             </TableRow>
@@ -291,6 +292,39 @@ export default function AutomationsPage() {
                   <TableCell className="font-mono text-sm">{c.schedule_time}</TableCell>
                   <TableCell className="text-xs">
                     {c.days_offset === 0 ? "No dia" : c.days_offset < 0 ? `${Math.abs(c.days_offset)} dia(s) antes` : `${c.days_offset} dia(s) depois`}
+                  </TableCell>
+                  <TableCell>
+                    {c.last_run_at ? (
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <div className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            c.last_run_status === 'success' ? "bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" : "bg-destructive shadow-[0_0_5px_rgba(239,68,68,0.5)]"
+                          )} />
+                          <span className={cn(
+                            "text-[10px] font-bold uppercase tracking-tight",
+                            c.last_run_status === 'success' ? "text-emerald-500" : "text-destructive"
+                          )}>
+                            {c.last_run_status === 'success' ? 'Sucesso' : 'Falha'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                          {new Date(c.last_run_at).toLocaleString('pt-BR', { 
+                            day: '2-digit', 
+                            month: '2-digit', 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </span>
+                        {c.last_run_error && (
+                           <span className="text-[9px] text-destructive/70 leading-tight max-w-[120px] truncate" title={c.last_run_error}>
+                             {c.last_run_error}
+                           </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground italic">Nunca executado</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Switch checked={c.active} onCheckedChange={async (v) => {
