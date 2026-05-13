@@ -56,6 +56,22 @@ async function processCronJobs(supabase: any, onlyJobId?: string) {
 
     console.log(`[cron] Processando automação: ${job.name || job.id} (Source: ${job.trigger_source})`);
 
+    // Trava para evitar execução duplicada no mesmo minuto
+    const lastRun = job.last_run_at ? new Date(job.last_run_at) : null;
+    if (lastRun && !onlyJobId) {
+      const isSameMinute = 
+        lastRun.getFullYear() === now.getFullYear() &&
+        lastRun.getMonth() === now.getMonth() &&
+        lastRun.getDate() === now.getDate() &&
+        lastRun.getHours() === now.getHours() &&
+        lastRun.getMinutes() === now.getMinutes();
+
+      if (isSameMinute) {
+        console.log(`[cron] Automação ${job.name || job.id} já executada neste minuto. Pulando...`);
+        continue;
+      }
+    }
+
     const offset = job.days_offset || 0;
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + offset);
