@@ -18,6 +18,7 @@ export function ConfirmDialog({
   confirmText = "Excluir",
   cancelText = "Cancelar",
   onConfirm,
+  disabled = false,
 }: {
   trigger: ReactNode;
   title: string;
@@ -25,6 +26,7 @@ export function ConfirmDialog({
   confirmText?: string;
   cancelText?: string;
   onConfirm: () => void | Promise<void>;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,7 +42,7 @@ export function ConfirmDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
+    <AlertDialog open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>

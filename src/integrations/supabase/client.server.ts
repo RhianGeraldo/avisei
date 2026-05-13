@@ -6,20 +6,15 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
+  if (!url || !key) {
+    console.error("[Supabase Admin] ERRO: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não encontrados.");
+    return null;
   }
 
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient<Database>(url, key, {
     auth: {
       storage: undefined,
       persistSession: false,
@@ -28,14 +23,25 @@ function createSupabaseAdminClient() {
   });
 }
 
-let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
+let _supabaseAdmin: any | null = null;
 
-// Server-side Supabase client with service role - bypasses RLS
-// SECURITY: Only use this for trusted server-side operations, never expose to client code
-// Import like: import { supabaseAdmin } from "@/integrations/supabase/client.server";
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdminClient>, {
-  get(_, prop, receiver) {
-    if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
-    return Reflect.get(_supabaseAdmin, prop, receiver);
+export const supabaseAdmin = {
+  get client() {
+    if (!_supabaseAdmin) {
+      _supabaseAdmin = createSupabaseAdminClient();
+    }
+    if (!_supabaseAdmin) {
+      throw new Error("Supabase Admin client is not initialized. Check your environment variables.");
+    }
+    return _supabaseAdmin;
   },
-});
+  // Proxy local para manter a sintaxe supabaseAdmin.from(...)
+  from: (table: string) => supabaseAdmin.client.from(table),
+  rpc: (name: string, args?: any) => supabaseAdmin.client.rpc(name, args),
+  auth: {
+    get admin() { return supabaseAdmin.client.auth.admin; }
+  },
+  storage: {
+    from: (id: string) => supabaseAdmin.client.storage.from(id)
+  }
+};

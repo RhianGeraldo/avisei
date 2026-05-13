@@ -1,4 +1,5 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Store,
@@ -10,6 +11,7 @@ import {
   Settings,
   LogOut,
   Sparkles,
+  Megaphone,
 } from "lucide-react";
 import {
   Sidebar,
@@ -30,7 +32,7 @@ import { Button } from "@/components/ui/button";
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const pathname = usePathname();
   const { roles, signOut, user } = useAuth();
   const isSuper = roles.includes("super_admin");
   const isCompanyAdmin = roles.includes("company_admin");
@@ -41,6 +43,7 @@ export function AppSidebar() {
     { title: "Instâncias", url: "/instances", icon: Smartphone },
     { title: "Mensagens", url: "/messages", icon: MessageSquareMore },
     { title: "Automações", url: "/automations", icon: Clock },
+    { title: "Campanhas", url: "/campaigns", icon: Megaphone },
     { title: "Gerenciador", url: "/manager", icon: Inbox },
     { title: "Histórico", url: "/history", icon: History },
     ...(isSuper || isCompanyAdmin
@@ -51,7 +54,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
-        <Link to="/dashboard" className="flex items-center gap-2 px-2 py-3">
+        <Link href="/dashboard" className="flex items-center gap-2 px-2 py-3">
           <div className="grid h-8 w-8 place-items-center rounded-md gradient-primary">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -71,8 +74,8 @@ export function AppSidebar() {
             <SidebarMenu>
               {items.map((item) => (
                 <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={pathname.startsWith(item.url)}>
-                    <Link to={item.url} className="flex items-center gap-2">
+                  <SidebarMenuButton asChild isActive={pathname === item.url || (item.url !== "/dashboard" && pathname.startsWith(item.url))}>
+                    <Link href={item.url} className="flex items-center gap-2">
                       <item.icon className="h-4 w-4" />
                       {!collapsed && <span>{item.title}</span>}
                     </Link>

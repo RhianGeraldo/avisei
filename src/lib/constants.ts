@@ -1,0 +1,41 @@
+export const VARIABLES = {
+  appointment: [
+    { label: "Nome Cliente", value: "cliente_nome" },
+    { label: "Primeiro Nome", value: "cliente_p_nome" },
+    { label: "Data", value: "data" },
+    { label: "Hora", value: "hora" },
+    { label: "Status", value: "status" },
+    { label: "Tipo", value: "tipo" },
+    { label: "Observação", value: "observacao" },
+    { label: "Profissional", value: "profissional" },
+    { label: "Serviços", value: "servicos" },
+    { label: "Unidade", value: "unidade" },
+  ],
+  billing: [
+    { label: "Nome Cliente", value: "cliente_nome" },
+    { label: "Primeiro Nome", value: "cliente_p_nome" },
+    { label: "Valor", value: "valor" },
+    { label: "Vencimento", value: "vencimento" },
+    { label: "Observação", value: "observacao" },
+    { label: "Forma Pagamento", value: "forma_pagamento" },
+    { label: "ID Venda", value: "id_venda" },
+    { label: "Unidade", value: "unidade" },
+  ],
+};
+
+export const DUMMY_VARS = {
+  cliente_nome: "Maria Oliveira",
+  cliente_p_nome: "Maria",
+  data: "25/12/2026",
+  hora: "14:30",
+  status: "Confirmado",
+  tipo: "Limpeza de Pele",
+  observacao: "Cliente prefere sala arejada",
+  profissional: "Dra. Ana Silva",
+  servicos: "Limpeza de Pele, Máscara Facial",
+  unidade: "Unidade Centro",
+  valor: "R$ 150,00",
+  vencimento: "10/01/2027",
+  forma_pagamento: "Cartão de Crédito",
+  id_venda: "7111912",
+};

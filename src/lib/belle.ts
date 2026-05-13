@@ -1,13 +1,25 @@
-import { createServerFn } from "@tanstack/react-start";
+"use server";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { substituirVariaveis } from "./utils";
 
-type SupabaseUserClient = import("@supabase/supabase-js").SupabaseClient<
-  import("@/integrations/supabase/types").Database
->;
+// Função para formatar data de YYYY-MM-DD para DD/MM/YYYY (exigência do Belle API)
+function formatDateToBelle(dateStr: string): string {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-");
+  if (!year || !month || !day) return dateStr;
+  return `${day}/${month}/${year}`;
+}
+
+// Função para formatar data de YYYY-MM-DD para DD/MM/YYYY (exibição na mensagem)
+function formatDateToDisplay(dateStr: string): string {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
 
 async function loadBelleBaseUrl(): Promise<string> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin
     .from("app_settings")
     .select("belle_base_url")
@@ -21,10 +33,9 @@ async function loadBelleBaseUrl(): Promise<string> {
 }
 
 async function loadUnitBelleConfig(
-  supabase: SupabaseUserClient,
   unitId: string,
 ): Promise<{ token: string; codEstab: string }> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("units")
     .select("belle_token, belle_cod_estab")
     .eq("id", unitId)
@@ -60,286 +71,196 @@ async function belleFetch<T = unknown>(
     }
   }
   if (!res.ok) {
-    const detail =
-      typeof parsed === "object" && parsed && "message" in parsed
-        ? String((parsed as { message: unknown }).message)
-        : typeof parsed === "string"
-          ? parsed.slice(0, 500)
-          : `HTTP ${res.status}`;
-    console.error(`[belle] GET ${path} -> ${res.status}`, parsed ?? text);
-    throw new Error(`Belle ${res.status}: ${detail}`);
+    throw new Error(`Belle ${res.status}: ${text.slice(0, 500)}`);
   }
   return parsed as T;
 }
 
-type BelleAgendamentoRaw = {
-  codConsulta: number;
-  dtAgenda: string;
-  hrConsulta: string;
-  status: string;
-  tipo: string;
-  codEstab: string;
-  tipo_obs?: string;
-  observacao?: string;
-  cliente: { cod: string; nome: string };
-  prof: { cod: string; nome: string };
-  sala?: { cod: string; nome: string };
-  servicos: Array<{ cod: string; nome: string }>;
-};
-
-type BelleCliente = {
-  codigo: number;
-  nome: string;
-  celular?: string;
-  celular2?: string;
-  telefone?: string;
-};
-
-export type AgendamentoVars = {
-  cliente_nome: string;
-  cliente_p_nome: string;
-  cliente_cod: string;
-  data: string;
-  hora: string;
-  profissional: string;
-  servicos: string;
-  unidade?: string;
-};
-
 function toTitleCase(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  if (!str) return "";
+  return str.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function substituirVariaveis(template: string, vars: AgendamentoVars): string {
-  return template.replace(/\{\{\s*([\w_]+)\s*\}\}/g, (match, key) => {
-    const v = (vars as Record<string, string | undefined>)[key];
-    return v ?? match;
-  });
-}
+// BUSCA DE AGENDAMENTOS
+export async function fetchBelleAgendamentos({ data }: { data: any }) {
+  const url = await loadBelleBaseUrl();
+  const { token, codEstab } = await loadUnitBelleConfig(data.unitId);
 
-export type BelleAgendamentoEnriquecido = {
-  codConsulta: number;
-  dtAgenda: string;
-  hrConsulta: string;
-  status: string;
-  tipo: string;
-  observacao: string | null;
-  cliente: {
-    cod: string;
-    nome: string;
-    celular: string | null;
+  const params: Record<string, string> = {
+    codEstab,
+    dtInicio: formatDateToBelle(data.dtInicio),
+    dtFim: formatDateToBelle(data.dtFim),
+    ...(data.status ? { status: data.status } : {}),
+    ...(data.tipoAgendamento ? { tipoAgendamento: data.tipoAgendamento } : {}),
   };
-  prof: { cod: string; nome: string };
-  servicos: Array<{ cod: string; nome: string }>;
-};
 
-const fetchAgendamentosInput = z.object({
-  unitId: z.string().uuid(),
-  // Formato Belle: dd/mm/yyyy
-  dtInicio: z.string().regex(/^\d{2}\/\d{2}\/\d{4}$/, "Use o formato dd/mm/yyyy"),
-  dtFim: z.string().regex(/^\d{2}\/\d{2}\/\d{4}$/, "Use o formato dd/mm/yyyy"),
-  hrInicio: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/)
-    .optional(),
-  hrFim: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/)
-    .optional(),
-  status: z.enum(["Marcado", "Confirmado", "Aguardando", "Em Andamento", "Antecipado"]).optional(),
-  tipoAgendamento: z.enum(["Avaliação", "Serviço", "Consulta", "Retorno"]).optional(),
-  codServico: z.number().int().optional(),
-});
+  const raw = await belleFetch<any[]>("/agendamentos", { url, token, params });
+  const lista = Array.isArray(raw) ? raw : [];
 
-export const fetchBelleAgendamentos = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => fetchAgendamentosInput.parse(data))
-  .handler(async ({ data, context }) => {
-    const url = await loadBelleBaseUrl();
-    const { token, codEstab } = await loadUnitBelleConfig(context.supabase, data.unitId);
+  // Agrupar por cliente para evitar duplicados
+  const grupos = new Map<string, any[]>();
+  lista.forEach(a => {
+    const cod = a.cliente?.cod;
+    if (!cod) return;
+    if (!grupos.has(cod)) grupos.set(cod, []);
+    grupos.get(cod)!.push(a);
+  });
 
-    const params: Record<string, string> = {
-      codEstab,
-      dtInicio: data.dtInicio,
-      dtFim: data.dtFim,
-    };
-    if (data.hrInicio) params.hrInicio = data.hrInicio;
-    if (data.hrFim) params.hrFim = data.hrFim;
-    if (data.status) params.status = data.status;
-    if (data.tipoAgendamento) params.tipoAgendamento = data.tipoAgendamento;
-    if (data.codServico !== undefined) params.codServico = String(data.codServico);
+  const codigosUnicos = Array.from(grupos.keys());
+  const celulares = new Map<string, string>();
 
-    const raw = await belleFetch<BelleAgendamentoRaw[]>("/agendamentos", {
-      url,
-      token,
-      params,
-    });
-    const lista = Array.isArray(raw) ? raw : [];
+  console.log(`[belle] Buscando celulares para ${codigosUnicos.length} clientes...`);
 
-    // Cliente fetch é caro — agrupa por código único e faz uma chamada por cliente.
-    const codigosUnicos = Array.from(new Set(lista.map((a) => a.cliente?.cod).filter(Boolean)));
-    const celulares = new Map<string, string>();
-
-    // Concorrência limitada (5 simultâneos) para não estourar o Belle.
-    const concurrency = 5;
-    for (let i = 0; i < codigosUnicos.length; i += concurrency) {
-      const slice = codigosUnicos.slice(i, i + concurrency);
-      await Promise.all(
-        slice.map(async (cod) => {
-          try {
-            const cliente = await belleFetch<BelleCliente>("/cliente/listar", {
-              url,
-              token,
-              params: { codEstab, id: cod },
-            });
-            const celular = cliente?.celular || cliente?.celular2 || cliente?.telefone || "";
-            if (celular) celulares.set(cod, celular);
-          } catch (err) {
-            console.warn(`[belle] falha buscando cliente ${cod}`, err);
-          }
-        }),
-      );
-    }
-
-    const enriquecidos: BelleAgendamentoEnriquecido[] = lista.map((a) => ({
-      codConsulta: a.codConsulta,
-      dtAgenda: a.dtAgenda,
-      hrConsulta: a.hrConsulta,
-      status: a.status,
-      tipo: a.tipo,
-      observacao: a.observacao ?? null,
-      cliente: {
-        cod: a.cliente?.cod ?? "",
-        nome: a.cliente?.nome ?? "",
-        celular: celulares.get(a.cliente?.cod) ?? null,
-      },
-      prof: { cod: a.prof?.cod ?? "", nome: a.prof?.nome ?? "" },
-      servicos: Array.isArray(a.servicos)
-        ? a.servicos.map((s) => ({ cod: s.cod, nome: s.nome }))
-        : [],
+  // Buscar celulares em lotes maiores (15 por vez) para ganhar velocidade
+  const BATCH_SIZE = 15;
+  for (let i = 0; i < codigosUnicos.length; i += BATCH_SIZE) {
+    const slice = codigosUnicos.slice(i, i + BATCH_SIZE);
+    console.log(`[belle] Processando lote ${Math.floor(i/BATCH_SIZE) + 1} de ${Math.ceil(codigosUnicos.length/BATCH_SIZE)}...`);
+    
+    await Promise.all(slice.map(async (cod) => {
+      try {
+        const cliente = await belleFetch<any>("/cliente/listar", { url, token, params: { codEstab, id: cod } });
+        const celular = cliente?.celular || cliente?.celular2 || cliente?.telefone || "";
+        if (celular) celulares.set(cod, celular);
+      } catch (err: any) {
+        console.warn(`[belle] Falha ao buscar cliente ${cod}:`, err.message);
+      }
     }));
+  }
+
+  console.log(`[belle] Busca de celulares finalizada. Total com celular: ${celulares.size}`);
+
+  const items = [];
+  for (const [cod, agendamentos] of grupos.entries()) {
+    // Ordenar por hora e pegar o primeiro
+    const ordenados = [...agendamentos].sort((a, b) => (a.hrConsulta || "").localeCompare(b.hrConsulta || ""));
+    const principal = ordenados[0];
+    
+    // Unificar todos os serviços
+    const todosServicos = agendamentos.flatMap(a => a.servicos || []).map(s => s.nome).filter(Boolean);
+    const servicosUnicos = Array.from(new Set(todosServicos))
+      .map(s => `- ${s}`)
+      .join("\n");
+
+    items.push({
+      ...principal,
+      id: principal.idAgendamento || principal.cod,
+      number: celulares.get(cod) || "",
+      vars: {
+        cliente_nome: toTitleCase(principal.cliente?.nome),
+        cliente_p_nome: toTitleCase(principal.cliente?.nome?.split(" ")[0]),
+        data: formatDateToDisplay(principal.dtAgenda),
+        hora: principal.hrConsulta,
+        profissional: principal.profNome,
+        servicos: servicosUnicos,
+        status: principal.status || "",
+        tipo: principal.tipo || "",
+        observacao: principal.observacao || "",
+      }
+    });
+  }
+
+  return { items };
+}
+
+// BUSCA DE COBRANÇAS (CONTAS A RECEBER)
+export async function fetchBelleCobrancas({ data }: { data: any }) {
+  const url = await loadBelleBaseUrl();
+  const { token, codEstab } = await loadUnitBelleConfig(data.unitId);
+
+  const params: Record<string, string> = {
+    estab: codEstab,
+    dtInicio: formatDateToBelle(data.dtInicio),
+    dtFim: formatDateToBelle(data.dtFim),
+    tipoData: "vencimento",
+  };
+
+  const raw = await belleFetch<any[]>("/contas_receber", { url, token, params });
+  const lista = (Array.isArray(raw) ? raw : []).filter(c => c.confirmado === "N");
+
+  const codigosUnicos = Array.from(new Set(lista.map((c) => c.cod_cliente).filter(Boolean)));
+  const celulares = new Map<string, string>();
+
+  console.log(`[belle] Buscando celulares para ${codigosUnicos.length} clientes de cobrança...`);
+
+  for (let i = 0; i < codigosUnicos.length; i += 15) {
+    const slice = codigosUnicos.slice(i, i + 15);
+    console.log(`[belle] Processando lote cobrança ${Math.floor(i/15) + 1}...`);
+    await Promise.all(slice.map(async (cod) => {
+      try {
+        const cliente = await belleFetch<any>("/cliente/listar", { url, token, params: { codEstab, id: cod } });
+        const celular = cliente?.celular || cliente?.celular2 || cliente?.telefone || "";
+        if (celular) celulares.set(cod, celular);
+      } catch (err: any) {
+        console.warn(`[belle] Falha ao buscar cliente cobrança ${cod}:`, err.message);
+      }
+    }));
+  }
+
+  console.log(`[belle] Busca de cobranças finalizada. Total com celular: ${celulares.size}`);
+
+  return {
+    items: lista.map((c) => ({
+      ...c,
+      id: c.cod_movimento,
+      number: celulares.get(c.cod_cliente) || "",
+      vars: {
+        cliente_nome: toTitleCase(c.nome_cliente),
+        cliente_p_nome: toTitleCase(c.nome_cliente?.split(" ")[0]),
+        valor: parseFloat(c.valor_bruto || "0").toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        vencimento: formatDateToDisplay(c.dt_vencimento),
+        observacao: c.observacao || "",
+        forma_pagamento: c.nome_forma_pagamento || "",
+        id_venda: c.id_venda_relacionada || "",
+      }
+    }))
+  };
+}
+
+// ENFILEIRAMENTO GENÉRICO
+export async function enqueueBelleItems({ data }: { data: any }) {
+  const { data: templates } = await supabaseAdmin
+    .from("messages")
+    .select("*")
+    .in("id", data.items.map((i: any) => i.messageId));
+  
+  const tplMap = new Map(templates?.map((t) => [t.id, t]) ?? []);
+  const { data: unit } = await supabaseAdmin.from("units").select("name").eq("id", data.unitId).maybeSingle();
+
+  const interval = data.interval || 30;
+  const now = new Date();
+
+  const rows = data.items.map((item: any, index: number) => {
+    const tpl = tplMap.get(item.messageId);
+    if (!tpl) return null;
+
+    const text = substituirVariaveis(tpl.template, {
+      ...item.vars,
+      unidade: unit?.name ?? "",
+    });
+
+    const cleanNumber = item.number.replace(/\D/g, "");
+    if (!cleanNumber) return null;
+
+    const scheduledAt = new Date(now.getTime() + (index * interval * 1000) + (Math.random() * 2000));
 
     return {
-      total: enriquecidos.length,
-      semCelular: enriquecidos.filter((e) => !e.cliente.celular).length,
-      agendamentos: enriquecidos,
+      unit_id: data.unitId,
+      message_id: item.messageId,
+      instance_id: data.instanceId,
+      number: cleanNumber,
+      cliente_nome: item.vars?.cliente_nome || null,
+      text,
+      status: "pending",
+      scheduled_at: scheduledAt.toISOString(),
+      company_id: tpl.company_id,
     };
-  });
+  }).filter(Boolean);
 
-const enqueueItemSchema = z.object({
-  codConsulta: z.number(),
-  messageId: z.string().uuid(),
-  number: z.string().min(8),
-  cliente: z.object({ cod: z.string(), nome: z.string() }),
-  dtAgenda: z.string(),
-  hrConsulta: z.string(),
-  profNome: z.string(),
-  servicos: z.array(z.string()),
-});
+  if (rows.length === 0) return { success: true, count: 0 };
 
-export const enqueueBelleAgendamentos = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) =>
-    z
-      .object({
-        unitId: z.string().uuid(),
-        instanceId: z.string().uuid(),
-        items: z.array(enqueueItemSchema).min(1),
-      })
-      .parse(data),
-  )
-  .handler(async ({ data, context }) => {
-    const messageIds = Array.from(new Set(data.items.map((i) => i.messageId)));
-    const { data: templates, error: tplErr } = await context.supabase
-      .from("messages")
-      .select("id, template, unit_ids")
-      .in("id", messageIds);
-    if (tplErr) throw new Error(tplErr.message);
-
-    const tplMap = new Map(templates?.map((t) => [t.id, t]) ?? []);
-
-    // Carrega nome da unidade pra variável {{unidade}}.
-    const { data: unit } = await context.supabase
-      .from("units")
-      .select("name")
-      .eq("id", data.unitId)
-      .maybeSingle();
-
-    // Merge: cliente+data+template → uma única mensagem combinando horários/serviços/profissionais.
-    type Item = (typeof data.items)[number];
-    const groups = new Map<string, Item[]>();
-    for (const item of data.items) {
-      const key = `${item.cliente.cod}|${item.dtAgenda}|${item.messageId}`;
-      const arr = groups.get(key) ?? [];
-      arr.push(item);
-      groups.set(key, arr);
-    }
-    const merged = data.items.length - groups.size;
-
-    const joinPt = (xs: string[]): string => {
-      if (xs.length === 0) return "";
-      if (xs.length === 1) return xs[0];
-      if (xs.length === 2) return `${xs[0]} e ${xs[1]}`;
-      return `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`;
-    };
-
-    const rows = Array.from(groups.values()).map((items) => {
-      // Ordena por horário pra primeira ser a mais cedo.
-      items.sort((a, b) => a.hrConsulta.localeCompare(b.hrConsulta));
-      const first = items[0];
-      const tpl = tplMap.get(first.messageId);
-      if (!tpl) throw new Error(`Template ${first.messageId} não encontrado.`);
-      // Se unit_ids está vazio é compartilhado; senão precisa conter a unidade.
-      if (tpl.unit_ids.length > 0 && !tpl.unit_ids.includes(data.unitId)) {
-        throw new Error("Template não disponível para esta unidade.");
-      }
-
-      const horarios = items.map((i) => i.hrConsulta);
-      const servicos = Array.from(new Set(items.flatMap((i) => i.servicos)));
-      const profissionais = Array.from(
-        new Set(items.map((i) => i.profNome).filter((p): p is string => !!p)),
-      );
-      const codConsultas = items.map((i) => i.codConsulta);
-
-      // Quando há mais de 1 serviço, formata como lista com "- " — o WhatsApp renderiza como bullets.
-      const servicosFormatted =
-        servicos.length > 1 ? servicos.map((s) => `- ${s}`).join("\n") : (servicos[0] ?? "");
-
-      const text = substituirVariaveis(tpl.template, {
-        cliente_nome: toTitleCase(first.cliente.nome),
-        cliente_p_nome: toTitleCase(first.cliente.nome.trim().split(/\s+/)[0] || first.cliente.nome),
-        cliente_cod: first.cliente.cod,
-        data: first.dtAgenda,
-        hora: joinPt(horarios),
-        profissional: joinPt(profissionais),
-        servicos: servicosFormatted,
-        unidade: unit?.name ?? "",
-      });
-
-      return {
-        unit_id: data.unitId,
-        message_id: first.messageId,
-        instance_id: data.instanceId,
-        number: first.number,
-        text,
-        status: "pending" as const,
-        cod_consulta: first.codConsulta,
-        cliente_cod: first.cliente.cod,
-        cliente_nome: toTitleCase(first.cliente.nome),
-        agendamento_data: {
-          dtAgenda: first.dtAgenda,
-          hrConsulta: joinPt(horarios),
-          profNome: joinPt(profissionais),
-          servicos,
-          codConsultas,
-          quantidade: items.length,
-        },
-      };
-    });
-
-    const { error } = await context.supabase.from("send_queue").insert(rows);
-    if (error) throw new Error(error.message);
-    return { count: rows.length, merged };
-  });
+  const { error } = await supabaseAdmin.from("send_queue").insert(rows);
+  if (error) throw error;
+  
+  return { success: true, count: rows.length };
+}

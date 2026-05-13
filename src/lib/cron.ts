@@ -1,470 +1,262 @@
-// Handler do CF Workers Cron Trigger.
-// Roda a cada 5 min: lê cron_jobs ativos, identifica quais devem rodar agora
-// (por horário Brasil + dia da semana + ainda não rodou hoje) e executa.
-import { substituirVariaveis } from "./belle";
+import { supabaseAdmin as defaultAdmin } from "@/integrations/supabase/client.server";
+import { evogoSendGeneric } from "./evogo";
+import { fetchBelleAgendamentos, fetchBelleCobrancas, enqueueBelleItems } from "./belle";
 
-type SupabaseAdmin = Awaited<
-  ReturnType<typeof import("@/integrations/supabase/client.server").supabaseAdmin.from>
->["from"] extends never
-  ? never
-  : import("@supabase/supabase-js").SupabaseClient<
-      import("@/integrations/supabase/types").Database
-    >;
+let isWorkerRunning = false;
 
-const CRON_WINDOW_MINUTES = 5;
-
-function getBrazilParts(date: Date): {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-  weekday: number;
-} {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
-  const wdName = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Sao_Paulo",
-    weekday: "short",
-  }).format(date);
-  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(wdName);
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    weekday,
-  };
-}
-
-function shouldRun(
-  cron: { schedule_time: string; days_of_week: number[]; last_run_at: string | null },
-  now: Date,
-): boolean {
-  const br = getBrazilParts(now);
-  if (!cron.days_of_week.includes(br.weekday)) return false;
-
-  const [hh, mm] = cron.schedule_time.split(":").map((n) => Number(n));
-  const nowMinutes = br.hour * 60 + br.minute;
-  const schedMinutes = hh * 60 + mm;
-  const diff = nowMinutes - schedMinutes;
-  if (diff < 0 || diff > CRON_WINDOW_MINUTES) return false;
-
-  if (cron.last_run_at) {
-    const last = getBrazilParts(new Date(cron.last_run_at));
-    if (last.year === br.year && last.month === br.month && last.day === br.day) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function toBelleDate(year: number, month: number, day: number): string {
-  const dd = String(day).padStart(2, "0");
-  const mm = String(month).padStart(2, "0");
-  return `${dd}/${mm}/${year}`;
-}
-
-// Aritmética de datas pura no calendário (sem envolver fuso/horas) —
-// evita bugs como BR→UTC→BR perder 1 dia por causa do offset UTC-3.
-function addDaysCalendar(
-  year: number,
-  month: number,
-  day: number,
-  daysToAdd: number,
-): { year: number; month: number; day: number } {
-  const d = new Date(Date.UTC(year, month - 1, day));
-  d.setUTCDate(d.getUTCDate() + daysToAdd);
-  return {
-    year: d.getUTCFullYear(),
-    month: d.getUTCMonth() + 1,
-    day: d.getUTCDate(),
-  };
-}
-
-async function belleGet<T>(
-  url: string,
-  token: string,
-  path: string,
-  params: Record<string, string>,
-): Promise<T> {
-  const qs = "?" + new URLSearchParams(params).toString();
-  const res = await fetch(`${url}${path}${qs}`, {
-    method: "GET",
-    headers: { Authorization: token, Accept: "application/json" },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Belle ${res.status}: ${text.slice(0, 300)}`);
-  }
-  return text ? JSON.parse(text) : (null as T);
-}
-
-async function evogoSend(url: string, apikey: string, number: string, text: string): Promise<void> {
-  const res = await fetch(`${url}/send/text`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey },
-    body: JSON.stringify({ number, text, delay: 0 }),
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Evogo ${res.status}: ${t.slice(0, 300)}`);
+// --- Lógica de Campanha ---
+async function checkAndFinalizeCampaign(supabase: any, campaignId: string) {
+  const { data: campaign } = await supabase.from("campaigns").select("status, total_contacts, sent_count, failed_count").eq("id", campaignId).single();
+  if (!campaign) return;
+  const processed = (campaign.sent_count || 0) + (campaign.failed_count || 0);
+  const total = campaign.total_contacts || 0;
+  if (total > 0 && processed >= total && campaign.status !== 'completed') {
+    await supabase.from("campaigns").update({ status: "completed" }).eq("id", campaignId);
+    await supabase.from("send_queue").delete().eq("campaign_id", campaignId).in("status", ["pending", "paused"]);
   }
 }
 
-type CronContext = {
-  cron: import("@/integrations/supabase/types").Database["public"]["Tables"]["cron_jobs"]["Row"];
-  targetInstanceId: string | null;
-  template: { id: string; template: string };
-  unit: { id: string; name: string; belle_token: string; belle_cod_estab: string };
-  belleUrl: string;
-  evogoUrl: string;
-};
-
-function toTitleCase(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+async function finalizeAllCompletedCampaigns(supabase: any) {
+  const { data: campaigns } = await supabase.from("campaigns").select("id").not("status", "in", '("completed","canceled")');
+  for (const campaign of campaigns || []) {
+    await checkAndFinalizeCampaign(supabase, campaign.id);
+  }
 }
 
-async function runOneCron(
-  supabase: SupabaseAdmin,
-  ctx: CronContext,
-  now: Date,
-): Promise<{ count: number; dispatched: number; errors: string[] }> {
-  const { cron, template, unit, belleUrl, evogoUrl } = ctx;
-  const errors: string[] = [];
+// --- Lógica de Automação (Cron Jobs) ---
+async function processCronJobs(supabase: any, onlyJobId?: string) {
+  const now = new Date();
+  const currentHour = now.getHours().toString().padStart(2, "0");
+  const currentMinute = now.getMinutes().toString().padStart(2, "0");
+  const currentTime = `${currentHour}:${currentMinute}`;
+  const currentDay = now.getDay();
 
-  // Data-alvo no Belle: hoje (Brasil) + (-days_offset). days_offset negativo = mensagem
-  // antes do agendamento, então a partir de hoje olhamos pra `-days_offset` dias à frente.
-  const br = getBrazilParts(now);
-  const target = addDaysCalendar(br.year, br.month, br.day, -cron.days_offset);
-  const dataBelle = toBelleDate(target.year, target.month, target.day);
+  console.log(`[cron] Verificando automações para ${currentTime} (Dia ${currentDay})`);
 
-  const params: Record<string, string> = {
-    codEstab: unit.belle_cod_estab,
-    dtInicio: dataBelle,
-    dtFim: dataBelle,
-  };
-  if (cron.status_filter) params.status = cron.status_filter;
-  if (cron.tipo_filter) params.tipoAgendamento = cron.tipo_filter;
+  let query = supabase
+    .from("cron_jobs")
+    .select("*")
+    .eq("active", true);
 
-  type BelleAg = {
-    codConsulta: number;
-    dtAgenda: string;
-    hrConsulta: string;
-    cliente: { cod: string; nome: string };
-    prof?: { cod: string; nome: string };
-    servicos?: Array<{ cod: string; nome: string }>;
-  };
-  type BelleCli = { celular?: string; celular2?: string; telefone?: string };
+  if (onlyJobId) {
+    query = query.eq("id", onlyJobId);
+  } else {
+    query = query.eq("schedule_time", currentTime);
+  }
 
-  const lista =
-    (await belleGet<BelleAg[]>(belleUrl, unit.belle_token, "/agendamentos", params)) ?? [];
+  const { data: jobs, error } = await query;
+  if (error) return { count: 0, error: error.message };
 
-  // Enriquecer com celular
-  const codigos = Array.from(new Set(lista.map((a) => a.cliente?.cod).filter(Boolean)));
-  const celulares = new Map<string, string>();
-  const concurrency = 5;
-  for (let i = 0; i < codigos.length; i += concurrency) {
-    const slice = codigos.slice(i, i + concurrency);
-    await Promise.all(
-      slice.map(async (cod) => {
-        try {
-          const cli = await belleGet<BelleCli>(belleUrl, unit.belle_token, "/cliente/listar", {
-            codEstab: unit.belle_cod_estab,
-            id: cod,
-          });
-          const cel = cli?.celular || cli?.celular2 || cli?.telefone || "";
-          if (cel) celulares.set(cod, cel);
-        } catch (err) {
-          console.warn(`[cron] cliente ${cod}`, err);
+  let totalProcessed = 0;
+  let totalDispatched = 0;
+
+  for (const job of jobs || []) {
+    // Verifica se hoje é dia de rodar (apenas se não for execução manual)
+    if (!onlyJobId && !job.days_of_week.includes(currentDay)) continue;
+
+    console.log(`[cron] Processando automação: ${job.name || job.id} (Source: ${job.trigger_source})`);
+
+    const offset = job.days_offset || 0;
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + offset);
+    const dateStr = targetDate.toISOString().split("T")[0];
+
+    console.log(`[cron] Data alvo da consulta: ${dateStr} (D+${offset})`);
+
+    try {
+      const fetchParams = { 
+        dtInicio: dateStr, 
+        dtFim: dateStr,
+        status: job.status_filter,
+        tipoAgendamento: job.tipo_filter === 'any' ? null : job.tipo_filter
+      };
+
+      const unitIds = job.unit_ids || [];
+      for (const unitId of unitIds) {
+        let result: any;
+        console.log(`[cron] Processando Unidade: ${unitId}`);
+
+        // Decide qual API do Belle chamar
+        if (job.trigger_source === "billing") {
+          result = await fetchBelleCobrancas({ data: { unitId, ...fetchParams } });
+        } else {
+          // Default: Agendamento
+          result = await fetchBelleAgendamentos({ data: { unitId, ...fetchParams } });
         }
-      }),
-    );
-  }
 
-  // Filtra agendamentos sem celular
-  const validos = lista.filter((a) => celulares.get(a.cliente?.cod));
+        const itemsToEnqueue = (result.items || [])
+          .filter((item: any) => !!item.number)
+          .map((item: any) => ({
+            ...item,
+            messageId: job.message_id,
+          }));
 
-  // Merge: cliente+data → uma mensagem com horários/serviços/profissionais combinados.
-  type Group = {
-    items: BelleAg[];
-    celular: string;
-  };
-  const groups = new Map<string, Group>();
-  for (const a of validos) {
-    const key = `${a.cliente.cod}|${a.dtAgenda}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.items.push(a);
-    } else {
-      groups.set(key, { items: [a], celular: celulares.get(a.cliente.cod)! });
-    }
-  }
+        if (itemsToEnqueue.length > 0) {
+          const instanceMapping = job.instance_mapping as Record<string, string>;
+          const instanceId = instanceMapping?.[unitId] || (job as any).instance_id;
 
-  const joinPt = (xs: string[]): string => {
-    if (xs.length === 0) return "";
-    if (xs.length === 1) return xs[0];
-    if (xs.length === 2) return `${xs[0]} e ${xs[1]}`;
-    return `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`;
-  };
+          if (!instanceId) {
+            console.error(`[cron] Unidade ${unitId} sem WhatsApp configurado.`);
+            continue;
+          }
 
-  const rows = Array.from(groups.values()).map(({ items, celular }) => {
-    items.sort((a, b) => a.hrConsulta.localeCompare(b.hrConsulta));
-    const first = items[0];
-    const horarios = items.map((i) => i.hrConsulta);
-    const servicos = Array.from(
-      new Set(items.flatMap((i) => i.servicos?.map((s) => s.nome) ?? [])),
-    );
-    const profissionais = Array.from(new Set(items.map((i) => i.prof?.nome ?? "").filter(Boolean)));
-    const servicosFmt =
-      servicos.length > 1 ? servicos.map((s) => `- ${s}`).join("\n") : (servicos[0] ?? "");
-    const text = substituirVariaveis(template.template, {
-      cliente_nome: toTitleCase(first.cliente.nome),
-      cliente_p_nome: toTitleCase(first.cliente.nome.trim().split(/\s+/)[0] || first.cliente.nome),
-      cliente_cod: first.cliente.cod,
-      data: first.dtAgenda,
-      hora: joinPt(horarios),
-      profissional: joinPt(profissionais),
-      servicos: servicosFmt,
-      unidade: unit.name,
-    });
-    return {
-      unit_id: unit.id,
-      message_id: template.id,
-      instance_id: ctx.targetInstanceId,
-      number: celular,
-      text,
-      status: "pending" as const,
-      cod_consulta: first.codConsulta,
-      cliente_cod: first.cliente.cod,
-      cliente_nome: toTitleCase(first.cliente.nome),
-      agendamento_data: {
-        dtAgenda: first.dtAgenda,
-        hrConsulta: joinPt(horarios),
-        profNome: joinPt(profissionais),
-        servicos,
-        codConsultas: items.map((i) => i.codConsulta),
-        quantidade: items.length,
-        cronJobId: cron.id,
-      },
-    };
-  });
-
-  if (rows.length === 0) {
-    return { count: 0, dispatched: 0, errors };
-  }
-
-  const { data: inserted, error: insErr } = await supabase
-    .from("send_queue")
-    .insert(rows)
-    .select("id, instance_id, number, text, message_id");
-  if (insErr) throw new Error(`insert send_queue: ${insErr.message}`);
-
-  if (!cron.auto_dispatch) {
-    return { count: inserted?.length ?? 0, dispatched: 0, errors };
-  }
-
-  // Auto-dispatch: pega apikey de cada instância (cache) e envia.
-  let dispatched = 0;
-  const apikeyCache = new Map<string, string>();
-  for (const item of inserted ?? []) {
-    if (!item.instance_id) {
-      errors.push(`item ${item.id}: sem instância`);
-      continue;
-    }
-    let apikey = apikeyCache.get(item.instance_id);
-    if (!apikey) {
-      const { data: inst } = await supabase
-        .from("instances")
-        .select("evogo_api_key")
-        .eq("id", item.instance_id)
-        .maybeSingle();
-      if (!inst?.evogo_api_key) {
-        errors.push(`item ${item.id}: instância sem apikey`);
-        continue;
+          const enqResult = await enqueueBelleItems({
+            data: {
+              unitId,
+              instanceId,
+              items: itemsToEnqueue,
+            }
+          });
+          
+          totalProcessed += enqResult.count;
+          console.log(`[cron] Unidade ${unitId}: ${enqResult.count} mensagens na fila.`);
+        }
       }
-      apikey = inst.evogo_api_key;
-      apikeyCache.set(item.instance_id, apikey);
+
+      await supabase.from("cron_jobs").update({ 
+        last_run_at: now.toISOString(),
+        last_run_status: "success",
+        last_run_count: totalProcessed,
+        last_run_error: null
+      }).eq("id", job.id);
+
+    } catch (err: any) {
+      console.error(`[cron] Erro na automação ${job.id}:`, err.message);
+      await supabase.from("cron_jobs").update({ 
+        last_run_at: now.toISOString(),
+        last_run_status: "error",
+        last_run_error: err.message
+      }).eq("id", job.id);
     }
+  }
+
+  return { count: totalProcessed, dispatched: totalDispatched };
+}
+
+// --- Motor Principal (Worker) ---
+export async function processSendQueue(supabase: any, evogoUrl: string) {
+  const nowStr = new Date().toISOString();
+  console.log(`[worker] Buscando itens pendentes até: ${nowStr}`);
+
+  const { data: allPending } = await supabase.from("send_queue").select("id").eq("status", "pending");
+  console.log(`[worker] Total de itens pendentes no banco: ${allPending?.length || 0}`);
+
+  const { data: queue } = await supabase
+    .from("send_queue")
+    .select("*, instances(evogo_api_key)")
+    .eq("status", "pending")
+    .or(`scheduled_at.lte.${nowStr},scheduled_at.is.null`)
+    .order("scheduled_at", { ascending: true })
+    .limit(20);
+
+  console.log(`[worker] Itens para processar agora: ${queue?.length || 0}`);
+
+  console.log(`[worker] Itens pendentes encontrados: ${queue?.length || 0}`);
+
+  if (!queue || queue.length === 0) return { dispatched: 0 };
+
+  const affectedCampaigns = new Set<string>();
+  let dispatched = 0;
+
+  for (const item of queue) {
+    const apikey = (item.instances as any)?.evogo_api_key;
+    if (!apikey) continue;
+
     const numeroLimpo = item.number.replace(/\D/g, "");
     let success = false;
     let errorMsg: string | null = null;
+
     try {
-      await evogoSend(evogoUrl, apikey, numeroLimpo, item.text);
+      console.log(`[worker] Enviando para ${numeroLimpo}...`);
+      await evogoSendGeneric(evogoUrl, apikey, numeroLimpo, item.text, item.message_type, item.content_data);
       success = true;
       dispatched++;
+      console.log(`[worker] Sucesso: ${numeroLimpo}`);
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : String(err);
-      errors.push(`item ${item.id}: ${errorMsg}`);
+      console.error(`[worker] Falha ao enviar para ${numeroLimpo}:`, errorMsg);
     }
-    await supabase.from("message_send_logs").insert({
-      instance_id: item.instance_id,
-      message_id: item.message_id,
-      number: numeroLimpo,
-      text: item.text,
-      success,
+
+    // Log e Atualização
+    const { error: logErr } = await supabase.from("message_send_logs").insert({ 
+      instance_id: item.instance_id, 
+      message_id: item.message_id, 
+      number: numeroLimpo, 
+      text: item.text, 
+      success, 
       error: errorMsg,
+      trigger_source: item.trigger_source || 'manual',
+      message_type: item.message_type || 'text',
+      content_data: item.content_data
     });
-    const { error: updateErr } = await supabase
-      .from("send_queue")
-      .update({ status: success ? "sent" : "failed" })
-      .eq("id", item.id);
-    if (updateErr) errors.push(`item ${item.id}: erro ao atualizar status (${updateErr.message})`);
+    if (logErr) console.error("[worker] Erro ao gravar log de envio:", logErr);
+    if (item.contact_id) {
+      await supabase.from("campaign_contacts").update({ status: success ? "sent" : "failed", sent_at: new Date().toISOString(), error: errorMsg }).eq("id", item.contact_id);
+    }
+    await supabase.from("send_queue").update({ status: success ? "sent" : "failed", last_error: errorMsg }).eq("id", item.id);
+    if (item.campaign_id) {
+      affectedCampaigns.add(item.campaign_id);
+      await supabase.rpc(success ? 'increment_campaign_sent' : 'increment_campaign_failed', { campaign_id_param: item.campaign_id });
+    }
   }
 
-  return { count: inserted?.length ?? 0, dispatched, errors };
+  for (const campaignId of affectedCampaigns) {
+    await checkAndFinalizeCampaign(supabase, campaignId);
+  }
+
+  return { dispatched };
 }
 
-export async function runCronTick(opts?: { onlyJobId?: string; skipShouldRun?: boolean }): Promise<{
-  ran: number;
-  results: Array<{ id: string; ok: boolean; count?: number; dispatched?: number; error?: string }>;
-}> {
+export async function runCronTick(opts?: { onlyJobId?: string, skipShouldRun?: boolean }): Promise<any> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  
+  // 1. Processar Automações (Popular Fila)
+  const cronResults = await processCronJobs(supabaseAdmin, opts?.onlyJobId);
 
-  const now = new Date();
-  const results: Array<{
-    id: string;
-    ok: boolean;
-    count?: number;
-    dispatched?: number;
-    error?: string;
-  }> = [];
+  // 2. Processar Fila de Envio (Worker)
+  if (isWorkerRunning) return { success: true, ...cronResults, worker: "already running" };
 
-  // Carrega configs globais uma única vez
-  const { data: settings } = await supabaseAdmin
-    .from("app_settings")
-    .select("belle_base_url, evogo_url")
-    .eq("id", true)
-    .maybeSingle();
-  if (!settings?.belle_base_url || !settings?.evogo_url) {
-    console.error("[cron] URLs não configuradas em app_settings — pulando tick");
-    return { ran: 0, results };
-  }
-  const belleUrl = settings.belle_base_url.replace(/\/+$/, "");
+  const { data: settings } = await supabaseAdmin.from("app_settings").select("evogo_url").eq("id", true).maybeSingle();
+  if (!settings?.evogo_url) return { success: false, error: "Config missing" };
   const evogoUrl = settings.evogo_url.replace(/\/+$/, "");
 
-  let query = supabaseAdmin.from("cron_jobs").select("*");
-  if (opts?.onlyJobId) {
-    query = query.eq("id", opts.onlyJobId);
-  } else {
-    query = query.eq("active", true);
-  }
-  const { data: jobs, error } = await query;
-  if (error) {
-    console.error("[cron] falha ao listar jobs", error.message);
-    return { ran: 0, results };
-  }
+  (async () => {
+    isWorkerRunning = true;
+    while (isWorkerRunning) {
+      try {
+        const { dispatched } = await processSendQueue(supabaseAdmin, evogoUrl);
+        
+        // Verificar se ainda há algo para processar AGORA ou se há algo nulo
+        const { count } = await supabaseAdmin
+          .from("send_queue")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+          .or(`scheduled_at.lte.${new Date().toISOString()},scheduled_at.is.null`);
+        
+        if (count === 0) {
+          // Se não há nada para agora, verificamos se há algo para o futuro
+          const { count: futureCount } = await supabaseAdmin
+            .from("send_queue")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "pending")
+            .limit(1);
 
-  for (const cron of jobs ?? []) {
-    if (!opts?.skipShouldRun && !shouldRun(cron, now)) continue;
-
-    let ok = false;
-    let runCount = 0;
-    let runDispatched = 0;
-    let errMsg: string | undefined;
-    try {
-      // Carrega template + unidade
-      const { data: tpl, error: tplErr } = await supabaseAdmin
-        .from("messages")
-        .select("id, template, unit_ids")
-        .eq("id", cron.message_id)
-        .maybeSingle();
-      if (tplErr || !tpl) throw new Error(`template ${cron.message_id} não encontrado`);
-
-      let unitQuery = supabaseAdmin.from("units").select("id, name, belle_token, belle_cod_estab");
-      if (cron.unit_ids && cron.unit_ids.length > 0) {
-        unitQuery = unitQuery.in("id", cron.unit_ids);
-      } else {
-        unitQuery = unitQuery.eq("company_id", cron.company_id);
+          if (futureCount === 0) {
+            await finalizeAllCompletedCampaigns(supabaseAdmin);
+            isWorkerRunning = false;
+            break;
+          }
+          await finalizeAllCompletedCampaigns(supabaseAdmin);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (err) {
+        console.error("[worker] Erro:", err);
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
-      const { data: unitsToRun, error: unitErr } = await unitQuery;
-      
-      if (unitErr || !unitsToRun || unitsToRun.length === 0) {
-        throw new Error("Nenhuma unidade encontrada para esta automação");
-      }
-
-      const { data: allInstances } = await supabaseAdmin
-        .from("instances")
-        .select("id, unit_id, status")
-        .in("unit_id", unitsToRun.map((u) => u.id));
-
-      ok = true;
-      for (const unit of unitsToRun) {
-        if (!unit.belle_token || !unit.belle_cod_estab) {
-          errMsg = (errMsg ? errMsg + "; " : "") + `unidade ${unit.name} sem token`;
-          ok = false;
-          continue;
-        }
-
-        let targetInstanceId: string | null = null;
-        if (cron.instance_mapping && typeof cron.instance_mapping === "object") {
-          targetInstanceId = (cron.instance_mapping as Record<string, string>)[unit.id] ?? null;
-        }
-
-        if (!targetInstanceId) {
-          const unitInstances = allInstances?.filter((i) => i.unit_id === unit.id) ?? [];
-          const inst = unitInstances.find((i) => i.status === "connected") ?? unitInstances[0];
-          targetInstanceId = inst?.id ?? null;
-        }
-
-        const r = await runOneCron(
-          supabaseAdmin,
-          {
-            cron,
-            targetInstanceId,
-            template: { id: tpl.id, template: tpl.template },
-            unit: {
-              id: unit.id,
-              name: unit.name,
-              belle_token: unit.belle_token,
-              belle_cod_estab: unit.belle_cod_estab,
-            },
-            belleUrl,
-            evogoUrl,
-          },
-          now,
-        );
-        runCount += r.count;
-        runDispatched += r.dispatched;
-        if (r.errors.length > 0) {
-          errMsg = (errMsg ? errMsg + "; " : "") + r.errors.join("; ").slice(0, 500);
-          ok = false;
-        }
-      }
-    } catch (err) {
-      errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[cron] job ${cron.id} falhou`, errMsg);
     }
+  })();
 
-    await supabaseAdmin
-      .from("cron_jobs")
-      .update({
-        last_run_at: now.toISOString(),
-        last_run_status: ok ? "success" : "error",
-        last_run_error: errMsg ?? null,
-        last_run_count: runCount,
-      })
-      .eq("id", cron.id);
-
-    results.push({
-      id: cron.id,
-      ok,
-      count: runCount,
-      dispatched: runDispatched,
-      error: errMsg,
-    });
-  }
-
-  return { ran: results.length, results };
+  return { success: true, ...cronResults };
 }

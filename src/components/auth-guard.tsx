@@ -1,16 +1,16 @@
 import { useEffect, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
 export function AuthGuard({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user) {
-      navigate({ to: "/login" });
+      router.push("/login");
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, router]);
 
   if (loading) {
     return (

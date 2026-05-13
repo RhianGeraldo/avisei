@@ -83,6 +83,7 @@ export type Database = {
           tipo_filter: string | null;
           unit_ids: string[];
           updated_at: string;
+          trigger_source: string | null;
         };
         Insert: {
           active?: boolean;
@@ -203,6 +204,7 @@ export type Database = {
           sent_at: string;
           success: boolean;
           text: string;
+          trigger_source: string | null;
         };
         Insert: {
           error?: string | null;
@@ -252,6 +254,7 @@ export type Database = {
           template: string;
           unit_ids: string[];
           updated_at: string;
+          trigger_source: string | null;
         };
         Insert: {
           active?: boolean;
@@ -388,6 +391,11 @@ export type Database = {
           text: string;
           unit_id: string;
           updated_at: string;
+          company_id: string;
+          contact_id: string | null;
+          trigger_source: string | null;
+          message_type: string | null;
+          content_data: Json | null;
         };
         Insert: {
           agendamento_data?: Json | null;
@@ -405,6 +413,11 @@ export type Database = {
           text: string;
           unit_id: string;
           updated_at?: string;
+          company_id: string;
+          contact_id?: string | null;
+          trigger_source?: string | null;
+          message_type?: string | null;
+          content_data?: Json | null;
         };
         Update: {
           agendamento_data?: Json | null;
@@ -422,6 +435,11 @@ export type Database = {
           text?: string;
           unit_id?: string;
           updated_at?: string;
+          company_id?: string;
+          contact_id?: string | null;
+          trigger_source?: string | null;
+          message_type?: string | null;
+          content_data?: Json | null;
         };
         Relationships: [
           {
