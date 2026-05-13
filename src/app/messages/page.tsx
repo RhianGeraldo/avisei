@@ -263,7 +263,7 @@ export default function MessagesPage() {
   };
 
   const openSendFromTemplate = (m: MessageRow) => {
-    const sameUnit = instances.filter((i) => m.unit_ids.includes(i.unit_id));
+    const sameUnit = instances.filter((i) => i.unit_id && m.unit_ids.includes(i.unit_id));
     const inst = sameUnit.find((i) => i.status === "connected") ?? sameUnit[0] ?? instances.find((i) => i.status === "connected") ?? instances[0];
     if (!inst) {
       toast.error("Cadastre uma instância primeiro");

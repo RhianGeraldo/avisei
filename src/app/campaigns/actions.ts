@@ -42,7 +42,7 @@ export async function startCampaignServer(campaignId: string) {
     const startTime = new Date();
     const template = (c.messages as any)?.template || "";
 
-    const queueItems = contacts.map((contact, i) => ({
+    const queueItems = contacts.map((contact: any, i: number) => ({
       company_id: c.company_id,
       unit_id: c.unit_id,
       instance_id: c.instance_id,

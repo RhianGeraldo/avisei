@@ -182,7 +182,6 @@ export default function InstancesPage() {
         // Configurações avançadas também vêm no info
         setAdvSettings({
           alwaysOnline: cfg.alwaysOnline ?? false,
-          rejectCall: cfg.rejectCall ?? false,
           rejectCalls: cfg.rejectCall ?? false, // Mapear ambos por segurança
           rejectCallMessage: cfg.msgRejectCall || "",
           readMessages: cfg.readMessages ?? false,

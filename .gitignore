@@ -36,3 +36,6 @@ dist-ssr
 *.sln
 *.sw?
 .next
+supabase/.temp
+tsconfig.tsbuildinfo
+

@@ -160,7 +160,7 @@ export default function CampaignsPage() {
       const { data: inst } = await supabase.from("instances").select("status, name").eq("id", c.instance_id).single();
       console.log(`[campaign] Verificando conexão da instância "${inst?.name}": ${inst?.status}`);
       
-      const isConnected = inst?.status === 'connected' || inst?.status === 'open';
+      const isConnected = inst?.status === 'connected' || (inst?.status as string) === 'open';
       
       if (!isConnected) {
         toast.error(`A instância "${inst?.name || 'selecionada'}" não está conectada (Status: ${inst?.status || 'desconhecido'}).`);
@@ -252,7 +252,7 @@ export default function CampaignsPage() {
     if (ext === 'csv') {
       Papa.parse(file, {
         complete: (results) => {
-          let rows = results.data.filter((row: any) => row.length > 0);
+          let rows = (results.data as any[][]).filter((row: any) => row.length > 0);
           
           // Detecção de cabeçalho
           if (rows.length > 0) {

@@ -41,7 +41,7 @@ export async function launchCampaign(campaignId: string) {
   const now = new Date();
 
   // 4. Preparar itens na fila (Tentativa com contact_id)
-  const queueItems = contacts.map((contact, index) => {
+  const queueItems = contacts.map((contact: any, index: number) => {
     const vars = {
       ...(contact.variables as any),
       nome: contact.name || "",
@@ -75,7 +75,7 @@ export async function launchCampaign(campaignId: string) {
     console.warn("[launchCampaign] Erro ao inserir com contact_id (provável cache). Tentando sem a coluna...");
     
     // Se falhar por causa da coluna contact_id, tentamos sem ela
-    const safeQueueItems = queueItems.map(({ contact_id, ...rest }) => rest);
+    const safeQueueItems = queueItems.map(({ contact_id: _cid, ...rest }: { contact_id: string; [key: string]: unknown }) => rest);
     const { error: insErrSafe } = await supabaseAdmin.from("send_queue").insert(safeQueueItems);
     
     if (insErrSafe) {

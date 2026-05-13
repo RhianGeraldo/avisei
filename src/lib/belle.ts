@@ -224,7 +224,7 @@ export async function enqueueBelleItems({ data }: { data: any }) {
     .select("*")
     .in("id", data.items.map((i: any) => i.messageId));
   
-  const tplMap = new Map(templates?.map((t) => [t.id, t]) ?? []);
+  const tplMap = new Map<string, any>(templates?.map((t: any) => [t.id, t]) ?? []);
   const { data: unit } = await supabaseAdmin.from("units").select("name").eq("id", data.unitId).maybeSingle();
 
   const interval = data.interval || 30;

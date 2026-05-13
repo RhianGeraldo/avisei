@@ -111,6 +111,7 @@ const QUEUE_STATUS_LABELS: Record<SendQueueStatus, string> = {
   sent: "Enviado",
   failed: "Falhou",
   cancelled: "Cancelado",
+  paused: "Pausado",
 };
 
 const QUEUE_STATUS_CLASSES: Record<SendQueueStatus, string> = {
@@ -118,6 +119,7 @@ const QUEUE_STATUS_CLASSES: Record<SendQueueStatus, string> = {
   sent: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
   failed: "bg-destructive/15 text-destructive border-destructive/30",
   cancelled: "bg-muted text-muted-foreground border-border",
+  paused: "bg-amber-500/15 text-amber-500 border-amber-500/30",
 };
 
 type InstanceStatus = Database["public"]["Enums"]["instance_status"];
@@ -241,6 +243,7 @@ export default function UnitDetailPage() {
   const [cronOpen, setCronOpen] = useState(false);
   const [editingCron, setEditingCron] = useState<CronJobRow | null>(null);
   const [cronName, setCronName] = useState("");
+  const [cronSource, setCronSource] = useState("appointment");
   const [cronTemplate, setCronTemplate] = useState("");
   const [cronInstance, setCronInstance] = useState("");
   const [cronTime, setCronTime] = useState("09:00");
