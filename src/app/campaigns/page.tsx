@@ -637,7 +637,7 @@ export default function CampaignsPage() {
               </div>
               
               <Card className="border border-muted-foreground/10 bg-muted/5">
-                <div className="max-h-[250px] overflow-y-auto overflow-x-hidden">
+                <div className="max-h-[250px] overflow-y-auto overflow-x-hidden custom-scrollbar">
                   <Table>
                     <TableHeader className="bg-muted/30 sticky top-0 z-10">
                       <TableRow className="hover:bg-transparent">
@@ -852,9 +852,9 @@ export default function CampaignsPage() {
               </TabsContent>
 
               <TabsContent value="contacts" className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="rounded-2xl border border-white/5 overflow-hidden">
+                <div className="rounded-2xl border border-white/5 overflow-hidden max-h-[450px] overflow-y-auto custom-scrollbar">
                   <Table>
-                    <TableHeader className="bg-white/5">
+                    <TableHeader className="bg-black/40 backdrop-blur-md sticky top-0 z-10">
                       <TableRow>
                         <TableHead>Nome do Cliente</TableHead>
                         <TableHead>Telefone / WhatsApp</TableHead>
