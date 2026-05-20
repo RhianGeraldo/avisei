@@ -33,7 +33,7 @@ BEGIN
     SELECT q.id
     FROM public.send_queue q
     WHERE q.status = 'pending'
-      AND (q.scheduled_at <= now_str OR q.scheduled_at IS NULL)
+      AND (q.scheduled_at <= now() OR q.scheduled_at IS NULL)
     ORDER BY q.scheduled_at ASC
     LIMIT limit_val
     FOR UPDATE SKIP LOCKED

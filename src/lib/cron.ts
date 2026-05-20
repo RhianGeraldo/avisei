@@ -153,7 +153,7 @@ async function processCronJobs(supabase: any, onlyJobId?: string) {
 // --- Motor Principal (Worker) ---
 export async function processSendQueue(supabase: any, evogoUrl: string) {
   const nowStr = new Date().toISOString();
-  console.log(`[worker] Buscando e travando itens pendentes concorrentemente até: ${nowStr}`);
+  console.log(`[worker] Buscando e travando itens pendentes concorrentemente...`);
 
   // Reivindica os registros da fila de forma 100% atômica no Postgres
   const { data: queue, error: claimErr } = await supabase.rpc("claim_send_queue_items", {
@@ -170,24 +170,44 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
 
   console.log(`[worker] Processando lote seguro de ${queue.length} mensagens agora...`);
 
+  // Obter os intervalos das campanhas no lote para respeitar estritamente o delay configurado pelo usuário
+  const campaignIds = Array.from(new Set(queue.map((item: any) => item.campaign_id).filter(Boolean)));
+  const campaignIntervals: Record<string, number> = {};
+  
+  if (campaignIds.length > 0) {
+    const { data: campaigns } = await supabase
+      .from("campaigns")
+      .select("id, interval_seconds")
+      .in("id", campaignIds);
+      
+    if (campaigns) {
+      for (const c of campaigns) {
+        campaignIntervals[c.id] = c.interval_seconds;
+      }
+    }
+  }
+
   const affectedCampaigns = new Set<string>();
   let dispatched = 0;
 
-  for (const item of queue) {
+  for (let i = 0; i < queue.length; i++) {
+    const item = queue[i];
     const apikey = item.evogo_api_key || (item.instances as any)?.evogo_api_key;
     if (!apikey) continue;
+
+    // Respeita estritamente o intervalo configurado na campanha antes do próximo envio do lote
+    if (i > 0 && item.campaign_id) {
+      const intervalSec = campaignIntervals[item.campaign_id] ?? 30;
+      console.log(`[worker] Respeitando intervalo da campanha. Aguardando ${intervalSec} segundos antes do próximo envio...`);
+      await new Promise(resolve => setTimeout(resolve, intervalSec * 1000));
+    }
 
     const numeroLimpo = item.number.replace(/\D/g, "");
     let success = false;
     let errorMsg: string | null = null;
-
-    // Adiciona o horário de envio formatado no fuso horário do Brasil para evitar bloqueios e informar o cliente
-    const formattedTime = new Date().toLocaleTimeString("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-    const textToSend = item.text ? `${item.text}\n\n[Enviado às ${formattedTime}]` : item.text;
+    
+    // A mensagem vai limpa e normal (sem o timestamp anexado no texto)
+    const textToSend = item.text;
 
     try {
       console.log(`[worker] Enviando para ${numeroLimpo}...`);
