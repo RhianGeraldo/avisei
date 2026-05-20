@@ -712,7 +712,7 @@ export type Database = {
         | "installment_due"
         | "installment_overdue"
         | "custom"
-      send_queue_status: "pending" | "sent" | "failed" | "cancelled" | "paused"
+      send_queue_status: "pending" | "sent" | "failed" | "cancelled" | "paused" | "processing"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -857,7 +857,7 @@ export const Constants = {
         "installment_overdue",
         "custom",
       ],
-      send_queue_status: ["pending", "sent", "failed", "cancelled", "paused"],
+      send_queue_status: ["pending", "sent", "failed", "cancelled", "paused", "processing"],
     },
   },
 } as const

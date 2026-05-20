@@ -54,7 +54,7 @@ import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/lib/auth-context";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { triggerCampaignWorker, startCampaignServer } from "./actions";
+import { triggerCampaignWorker, startCampaignServer, pauseCampaignServer, resumeCampaignServer } from "./actions";
 
 type CampaignRow = any; // Facilitando para evitar erros de tipagem rápida
 
@@ -189,8 +189,8 @@ export default function CampaignsPage() {
   const pauseCampaign = async (id: string) => {
     setLoading(true);
     try {
-      await supabase.from("campaigns").update({ status: "paused" }).eq("id", id);
-      await supabase.from("send_queue").update({ status: "paused" }).eq("campaign_id", id).eq("status", "pending");
+      const result = await pauseCampaignServer(id);
+      if (!result.success) throw new Error(result.error);
       toast.success("Campanha pausada");
       qc.invalidateQueries({ queryKey: ["campaigns"] });
     } catch (err: any) {
@@ -203,10 +203,9 @@ export default function CampaignsPage() {
   const resumeCampaign = async (id: string) => {
     setLoading(true);
     try {
-      await supabase.from("campaigns").update({ status: "running" }).eq("id", id);
-      await supabase.from("send_queue").update({ status: "pending" }).eq("campaign_id", id).eq("status", "paused");
+      const result = await resumeCampaignServer(id);
+      if (!result.success) throw new Error(result.error);
       toast.success("Campanha retomada");
-      triggerCampaignWorker();
       qc.invalidateQueries({ queryKey: ["campaigns"] });
     } catch (err: any) {
       toast.error(err.message || "Erro ao retomar");

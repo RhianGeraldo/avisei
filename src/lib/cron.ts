@@ -153,30 +153,28 @@ async function processCronJobs(supabase: any, onlyJobId?: string) {
 // --- Motor Principal (Worker) ---
 export async function processSendQueue(supabase: any, evogoUrl: string) {
   const nowStr = new Date().toISOString();
-  console.log(`[worker] Buscando itens pendentes até: ${nowStr}`);
+  console.log(`[worker] Buscando e travando itens pendentes concorrentemente até: ${nowStr}`);
 
-  const { data: allPending } = await supabase.from("send_queue").select("id").eq("status", "pending");
-  if (allPending && allPending.length > 0) {
-    console.log(`[worker] Total de itens pendentes no banco: ${allPending.length}`);
+  // Reivindica os registros da fila de forma 100% atômica no Postgres
+  const { data: queue, error: claimErr } = await supabase.rpc("claim_send_queue_items", {
+    limit_val: 20,
+    now_str: nowStr
+  });
+
+  if (claimErr) {
+    console.error("[worker] Erro ao reivindicar mensagens da fila:", claimErr.message);
+    return { dispatched: 0 };
   }
-
-  const { data: queue } = await supabase
-    .from("send_queue")
-    .select("*, instances(evogo_api_key)")
-    .eq("status", "pending")
-    .or(`scheduled_at.lte.${nowStr},scheduled_at.is.null`)
-    .order("scheduled_at", { ascending: true })
-    .limit(20);
 
   if (!queue || queue.length === 0) return { dispatched: 0 };
 
-  console.log(`[worker] Processando lote de ${queue.length} mensagens agora...`);
+  console.log(`[worker] Processando lote seguro de ${queue.length} mensagens agora...`);
 
   const affectedCampaigns = new Set<string>();
   let dispatched = 0;
 
   for (const item of queue) {
-    const apikey = (item.instances as any)?.evogo_api_key;
+    const apikey = item.evogo_api_key || (item.instances as any)?.evogo_api_key;
     if (!apikey) continue;
 
     const numeroLimpo = item.number.replace(/\D/g, "");
@@ -192,6 +190,13 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[worker] Falha ao enviar para ${numeroLimpo}:`, errorMsg);
+      
+      // Se o erro for de falta de JID do dispositivo, significa que o WhatsApp desconectou
+      if (errorMsg.includes("the store doesn't contain a device JID") && item.campaign_id) {
+        console.log(`[worker] Detectada desconexão do WhatsApp. Pausando campanha ${item.campaign_id}`);
+        await supabase.from("campaigns").update({ status: "paused" }).eq("id", item.campaign_id);
+        await supabase.from("send_queue").update({ status: "paused" }).eq("campaign_id", item.campaign_id).eq("status", "pending");
+      }
     }
 
     // Log e Atualização

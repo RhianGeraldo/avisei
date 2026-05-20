@@ -78,6 +78,7 @@ const STATUS_LABELS: Record<QueueStatus, string> = {
   failed: "Falhou",
   cancelled: "Cancelado",
   paused: "Pausado",
+  processing: "Processando",
 };
 
 const STATUS_CLASSES: Record<QueueStatus, string> = {
@@ -86,6 +87,7 @@ const STATUS_CLASSES: Record<QueueStatus, string> = {
   failed: "bg-destructive/15 text-destructive border-destructive/30",
   cancelled: "bg-muted text-muted-foreground border-border",
   paused: "bg-amber-500/15 text-amber-500 border-amber-500/30",
+  processing: "bg-blue-500/15 text-blue-500 border-blue-500/30",
 };
 
 // Removido MessageContentPreview local em favor do MessagePreview compartilhado
