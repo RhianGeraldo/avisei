@@ -181,9 +181,17 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
     let success = false;
     let errorMsg: string | null = null;
 
+    // Adiciona o horário de envio formatado no fuso horário do Brasil para evitar bloqueios e informar o cliente
+    const formattedTime = new Date().toLocaleTimeString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    const textToSend = item.text ? `${item.text}\n\n[Enviado às ${formattedTime}]` : item.text;
+
     try {
       console.log(`[worker] Enviando para ${numeroLimpo}...`);
-      await evogoSendGeneric(evogoUrl, apikey, numeroLimpo, item.text, item.message_type, item.content_data);
+      await evogoSendGeneric(evogoUrl, apikey, numeroLimpo, textToSend, item.message_type, item.content_data);
       success = true;
       dispatched++;
       console.log(`[worker] Sucesso: ${numeroLimpo}`);
@@ -204,7 +212,7 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
       instance_id: item.instance_id, 
       message_id: item.message_id, 
       number: numeroLimpo, 
-      text: item.text, 
+      text: textToSend, 
       success, 
       error: errorMsg,
       trigger_source: item.trigger_source || 'manual',
