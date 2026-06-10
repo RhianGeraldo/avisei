@@ -29,22 +29,42 @@ export default function ContactsPage() {
   const { data: contacts = [], isLoading } = useQuery({
     queryKey: ["contacts", companyId],
     queryFn: async () => {
-      let query = supabase
-        .from("contacts")
-        .select("*, units(name)")
-        .order("created_at", { ascending: false });
-        
-      if (companyId) {
-        query = query.eq("company_id", companyId);
-      }
+      let allData: any[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
 
-      const { data, error } = await query;
-      
-      if (error) {
-        toast.error("Erro ao carregar contatos: " + error.message);
-        throw error;
+      while (hasMore) {
+        let query = supabase
+          .from("contacts")
+          .select("*, units(name)")
+          .order("created_at", { ascending: false })
+          .range(from, from + step - 1);
+          
+        if (companyId) {
+          query = query.eq("company_id", companyId);
+        }
+
+        const { data, error } = await query;
+        
+        if (error) {
+          toast.error("Erro ao carregar contatos: " + error.message);
+          throw error;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < step) {
+            hasMore = false;
+          } else {
+            from += step;
+          }
+        } else {
+          hasMore = false;
+        }
       }
-      return data ?? [];
+      
+      return allData;
     },
   });
 
@@ -106,9 +126,15 @@ export default function ContactsPage() {
     <AppLayout title="Base de Leads">
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <p className="text-muted-foreground hidden lg:block">
-            Sua base de leads importada dos grupos de WhatsApp.
-          </p>
+          <div className="flex items-center gap-4">
+            <p className="text-muted-foreground hidden lg:block">
+              Sua base de leads importada dos grupos de WhatsApp.
+            </p>
+            <Badge variant="secondary" className="text-sm px-3 py-1 border-primary/20 bg-primary/10 text-primary whitespace-nowrap">
+              <Users className="w-4 h-4 mr-2" />
+              {filteredContacts.length} {filteredContacts.length === 1 ? 'contato' : 'contatos'}
+            </Badge>
+          </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
             <div className="relative w-full sm:w-80">
