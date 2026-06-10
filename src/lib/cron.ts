@@ -4,6 +4,33 @@ import { fetchBelleAgendamentos, fetchBelleCobrancas, enqueueBelleItems } from "
 
 let isWorkerRunning = false;
 
+/**
+ * Sleep interruptível: dorme em fatias de 2s e verifica o status da campanha.
+ * Retorna false se a campanha foi pausada/cancelada durante o sleep (deve parar).
+ */
+async function interruptibleSleep(totalSeconds: number, campaignId: string | null, supabase: any): Promise<boolean> {
+  if (!campaignId) {
+    await new Promise(resolve => setTimeout(resolve, totalSeconds * 1000));
+    return true;
+  }
+  const sliceSec = 2;
+  const slices = Math.max(1, Math.ceil(totalSeconds / sliceSec));
+  for (let i = 0; i < slices; i++) {
+    await new Promise(resolve => setTimeout(resolve, sliceSec * 1000));
+    const { data } = await supabase
+      .from("campaigns")
+      .select("status")
+      .eq("id", campaignId)
+      .maybeSingle();
+    // null = campanha excluída; paused/canceled = deve parar
+    if (!data || data.status === "paused" || data.status === "canceled") {
+      console.log(`[worker] Campanha ${campaignId} não está mais running (status: ${data?.status ?? 'excluída'}). Interrompendo sleep.`);
+      return false;
+    }
+  }
+  return true;
+}
+
 // --- Lógica de Campanha ---
 async function checkAndFinalizeCampaign(supabase: any, campaignId: string) {
   const { data: campaign } = await supabase.from("campaigns").select("status, total_contacts, sent_count, failed_count").eq("id", campaignId).single();
@@ -195,11 +222,35 @@ export async function processSendQueue(supabase: any, evogoUrl: string) {
     const apikey = item.evogo_api_key || (item.instances as any)?.evogo_api_key;
     if (!apikey) continue;
 
-    // Respeita estritamente o intervalo configurado na campanha antes do próximo envio do lote
+    // Respeita o intervalo interruptível antes de enviar o próximo
     if (i > 0 && item.campaign_id) {
       const intervalSec = campaignIntervals[item.campaign_id] ?? 30;
-      console.log(`[worker] Respeitando intervalo da campanha. Aguardando ${intervalSec} segundos antes do próximo envio...`);
-      await new Promise(resolve => setTimeout(resolve, intervalSec * 1000));
+      console.log(`[worker] Aguardando ${intervalSec}s (interruptível) antes do próximo envio...`);
+      const shouldContinue = await interruptibleSleep(intervalSec, item.campaign_id, supabase);
+      if (!shouldContinue) {
+        // Campanha pausada/excluída durante o sleep — devolve item para paused e para
+        await supabase.from("send_queue")
+          .update({ status: "paused", last_error: "Campanha pausada ou excluída" })
+          .eq("id", item.id);
+        console.log(`[worker] Item ${item.id} devolvido à fila. Parando lote.`);
+        break;
+      }
+    }
+
+    // Verificar status da campanha ANTES de enviar (mesmo fora do sleep)
+    if (item.campaign_id) {
+      const { data: campCheck } = await supabase
+        .from("campaigns")
+        .select("status")
+        .eq("id", item.campaign_id)
+        .maybeSingle();
+      if (!campCheck || campCheck.status === "paused" || campCheck.status === "canceled") {
+        await supabase.from("send_queue")
+          .update({ status: "paused", last_error: "Campanha pausada ou excluída" })
+          .eq("id", item.id);
+        console.log(`[worker] Campanha ${item.campaign_id} pausada/excluída. Pulando envio do item ${item.id}.`);
+        continue;
+      }
     }
 
     const numeroLimpo = item.number.replace(/\D/g, "");

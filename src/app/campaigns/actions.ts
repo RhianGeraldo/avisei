@@ -153,3 +153,31 @@ export async function resumeCampaignServer(campaignId: string) {
     return { success: false, error: err.message };
   }
 }
+
+export async function deleteCampaignServer(campaignId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  try {
+    console.log(`[actions] Excluindo campanha ${campaignId}...`);
+
+    // 1. Primeiro marcar como canceled para que o worker pare imediatamente
+    await supabaseAdmin.from("campaigns").update({ status: "canceled" }).eq("id", campaignId);
+
+    // 2. Limpar fila de envio (pending e paused)
+    await supabaseAdmin.from("send_queue")
+      .delete()
+      .eq("campaign_id", campaignId)
+      .in("status", ["pending", "paused"]);
+
+    // 3. Pequeno delay para o worker ter tempo de perceber o canceled
+    await new Promise(resolve => setTimeout(resolve, 2500));
+
+    // 4. Excluir a campanha definitivamente
+    const { error } = await supabaseAdmin.from("campaigns").delete().eq("id", campaignId);
+    if (error) throw error;
+
+    return { success: true };
+  } catch (err: any) {
+    console.error("[actions] Erro ao excluir campanha:", err.message);
+    return { success: false, error: err.message };
+  }
+}

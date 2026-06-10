@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -44,7 +49,7 @@ import {
   Plus, Megaphone, Play, Pause, Trash2, Loader2, Info, 
   Settings2, Users, Upload, FileSpreadsheet, Globe, 
   CheckCircle2, AlertCircle, Eye, BarChart3, Search, 
-  XCircle, Clock, ChevronRight, Activity, Pencil, MessageSquare, History, X, UserPlus, Send, ExternalLink, Smartphone, Globe2
+  XCircle, Clock, ChevronRight, Activity, Pencil, MessageSquare, History, X, UserPlus, Send, ExternalLink, Smartphone, Globe2, Database, CheckSquare, Square
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -54,7 +59,7 @@ import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/lib/auth-context";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { triggerCampaignWorker, startCampaignServer, pauseCampaignServer, resumeCampaignServer } from "./actions";
+import { triggerCampaignWorker, startCampaignServer, pauseCampaignServer, resumeCampaignServer, deleteCampaignServer } from "./actions";
 
 type CampaignRow = any; // Facilitando para evitar erros de tipagem rápida
 
@@ -83,6 +88,13 @@ export default function CampaignsPage() {
   const [contacts, setContacts] = useState<{ name: string; number: string }[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Base de Leads modal state
+  const [isLeadsModalOpen, setIsLeadsModalOpen] = useState(false);
+  const [leadsSearch, setLeadsSearch] = useState("");
+  const [leadsUnitFilter, setLeadsUnitFilter] = useState("all");
+  const [leadsGroupFilter, setLeadsGroupFilter] = useState("all");
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns"],
@@ -141,6 +153,86 @@ export default function CampaignsPage() {
       return data ?? [];
     },
   });
+
+  // Query para a Base de Leads
+  const { data: allLeads = [], isLoading: isLeadsLoading } = useQuery({
+    queryKey: ["leads-base"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("id, name, number, groups, units(id, name)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: isLeadsModalOpen,
+  });
+
+  // Unidades únicas da base de leads (para filtro)
+  const leadsUnits = useMemo(() => {
+    const map = new Map<string, string>();
+    allLeads.forEach((l: any) => {
+      if (l.units?.id) map.set(l.units.id, l.units.name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [allLeads]);
+
+  // Grupos únicos da base de leads (para filtro)
+  const leadsGroups = useMemo(() => {
+    const set = new Set<string>();
+    allLeads.forEach((l: any) => {
+      if (Array.isArray(l.groups)) l.groups.forEach((g: any) => { if (g.name) set.add(g.name); });
+    });
+    return Array.from(set);
+  }, [allLeads]);
+
+  // Filtro aplicado
+  const filteredLeads = useMemo(() => {
+    return allLeads.filter((l: any) => {
+      const searchLower = leadsSearch.toLowerCase();
+      const matchSearch = !leadsSearch ||
+        l.number?.includes(leadsSearch) ||
+        l.name?.toLowerCase().includes(searchLower);
+      const matchUnit = leadsUnitFilter === "all" || l.units?.id === leadsUnitFilter;
+      const matchGroup = leadsGroupFilter === "all" ||
+        (Array.isArray(l.groups) && l.groups.some((g: any) => g.name === leadsGroupFilter));
+      return matchSearch && matchUnit && matchGroup;
+    });
+  }, [allLeads, leadsSearch, leadsUnitFilter, leadsGroupFilter]);
+
+  const handleConfirmLeadsImport = () => {
+    const toAdd = filteredLeads
+      .filter((l: any) => selectedLeadIds.has(l.id))
+      .map((l: any) => ({ name: l.name || "", number: l.number || "" }))
+      .filter((l) => l.number);
+    setContacts(prev => {
+      const existingNumbers = new Set(prev.map(c => c.number));
+      const newOnes = toAdd.filter(c => !existingNumbers.has(c.number));
+      return [...prev, ...newOnes];
+    });
+    toast.success(`${toAdd.length} contatos adicionados da Base de Leads!`);
+    setIsLeadsModalOpen(false);
+    setSelectedLeadIds(new Set());
+    setLeadsSearch("");
+    setLeadsUnitFilter("all");
+    setLeadsGroupFilter("all");
+  };
+
+  const toggleLeadSelection = (id: string) => {
+    setSelectedLeadIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllLeads = () => {
+    if (selectedLeadIds.size === filteredLeads.length) {
+      setSelectedLeadIds(new Set());
+    } else {
+      setSelectedLeadIds(new Set(filteredLeads.map((l: any) => l.id)));
+    }
+  };
 
   const resetForm = () => {
     setName("");
@@ -234,11 +326,16 @@ export default function CampaignsPage() {
   };
 
   const deleteCampaign = async (id: string) => {
-    const { error } = await supabase.from("campaigns").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else {
+    setLoading(true);
+    try {
+      const result = await deleteCampaignServer(id);
+      if (!result.success) throw new Error(result.error);
       toast.success("Campanha excluída");
       qc.invalidateQueries({ queryKey: ["campaigns"] });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao excluir campanha");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -623,15 +720,44 @@ export default function CampaignsPage() {
                   >
                     <Plus className="h-3 w-3" /> Adicionar Linha
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm" 
-                    className="h-8 text-xs gap-1 bg-primary/5 border-primary/20 hover:bg-primary/10"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="h-3 w-3" /> Importar Arquivo
-                  </Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-8 text-xs gap-1.5 bg-primary/5 border-primary/20 hover:bg-primary/10"
+                      >
+                        <Upload className="h-3 w-3" /> Importar Leads
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-2" align="end">
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          className="flex items-center gap-2.5 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors text-left w-full"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <FileSpreadsheet className="h-4 w-4 text-primary" />
+                          <div>
+                            <p className="font-medium">Importar Arquivo</p>
+                            <p className="text-[10px] text-muted-foreground">CSV ou Excel (.xlsx)</p>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2.5 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors text-left w-full"
+                          onClick={() => { setSelectedLeadIds(new Set()); setIsLeadsModalOpen(true); }}
+                        >
+                          <Database className="h-4 w-4 text-emerald-500" />
+                          <div>
+                            <p className="font-medium">Da Base de Leads</p>
+                            <p className="text-[10px] text-muted-foreground">Contatos importados de grupos</p>
+                          </div>
+                        </button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
               
@@ -704,6 +830,139 @@ export default function CampaignsPage() {
               <Button type="submit" disabled={loading}>{loading ? "Salvando..." : editingId ? "Atualizar Campanha" : "Criar Campanha"}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Importar da Base de Leads */}
+      <Dialog open={isLeadsModalOpen} onOpenChange={setIsLeadsModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="p-6 pb-4 border-b border-border">
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-emerald-500" />
+              Importar da Base de Leads
+            </DialogTitle>
+            <DialogDescription>
+              Selecione os contatos que deseja adicionar a esta campanha. Duplicatas serão ignoradas automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Filtros */}
+          <div className="flex flex-wrap items-center gap-2 px-6 py-3 border-b border-border bg-muted/20">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar número ou nome..."
+                className="pl-8 h-8 text-sm bg-background"
+                value={leadsSearch}
+                onChange={e => setLeadsSearch(e.target.value)}
+              />
+            </div>
+            <Select value={leadsUnitFilter} onValueChange={setLeadsUnitFilter}>
+              <SelectTrigger className="h-8 text-xs w-40">
+                <SelectValue placeholder="Unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as unidades</SelectItem>
+                {leadsUnits.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={leadsGroupFilter} onValueChange={setLeadsGroupFilter}>
+              <SelectTrigger className="h-8 text-xs w-44">
+                <SelectValue placeholder="Grupo de Origem" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os grupos</SelectItem>
+                {leadsGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Lista */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            {isLeadsLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-20 text-muted-foreground opacity-40">
+                <Users className="h-10 w-10" />
+                <p>Nenhum contato encontrado.</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/30 sticky top-0 z-10">
+                  <tr className="border-b border-border">
+                    <th className="w-10 px-4 py-2.5 text-left">
+                      <button type="button" onClick={toggleSelectAllLeads} className="flex items-center text-muted-foreground hover:text-foreground transition-colors">
+                        {selectedLeadIds.size === filteredLeads.length && filteredLeads.length > 0
+                          ? <CheckSquare className="h-4 w-4 text-primary" />
+                          : <Square className="h-4 w-4" />}
+                      </button>
+                    </th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Número</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Nome</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Unidade</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Grupo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLeads.map((lead: any) => {
+                    const isSelected = selectedLeadIds.has(lead.id);
+                    const groupName = Array.isArray(lead.groups) && lead.groups[0]?.name;
+                    return (
+                      <tr
+                        key={lead.id}
+                        onClick={() => toggleLeadSelection(lead.id)}
+                        className={cn(
+                          "border-b border-border/50 cursor-pointer transition-colors",
+                          isSelected ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30"
+                        )}
+                      >
+                        <td className="w-10 px-4 py-2.5">
+                          {isSelected
+                            ? <CheckSquare className="h-4 w-4 text-primary" />
+                            : <Square className="h-4 w-4 text-muted-foreground" />}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-xs">{lead.number}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{lead.name || ""}</td>
+                        <td className="px-3 py-2.5">
+                          {lead.units?.name && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">{lead.units.name}</Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {groupName && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 max-w-[150px] truncate" title={groupName}>{groupName}</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/20">
+            <span className="text-sm text-muted-foreground">
+              {selectedLeadIds.size > 0
+                ? <><span className="font-bold text-foreground">{selectedLeadIds.size}</span> contato(s) selecionado(s) de {filteredLeads.length}</>
+                : <>{filteredLeads.length} contato(s) encontrado(s)</>}
+            </span>
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => setIsLeadsModalOpen(false)}>Cancelar</Button>
+              <Button
+                type="button"
+                disabled={selectedLeadIds.size === 0}
+                onClick={handleConfirmLeadsImport}
+                className="gap-2"
+              >
+                <UserPlus className="h-4 w-4" />
+                Adicionar {selectedLeadIds.size > 0 ? selectedLeadIds.size : ""} Contatos
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
