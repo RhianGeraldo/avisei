@@ -313,28 +313,38 @@ export async function updateEvogoWebhook({ data }: { data: any }) {
 }
 
 export async function evogoSendGeneric(url: string, apikey: string, number: string, text: string, type: string = "text", contentData: any = {}) {
+  let formattedNumber = String(number).replace(/\D/g, "");
+  // Se for um número brasileiro com DDD (10 ou 11 dígitos), adiciona o DDI 55
+  if (formattedNumber.length === 10 || formattedNumber.length === 11) {
+    formattedNumber = `55${formattedNumber}`;
+  }
+
   let path = "/send/text";
-  let body: any = { number, text, delay: 1000 };
+  let body: any = { number: formattedNumber, text, delay: 1000 };
 
   if (type === "media") {
     path = "/send/media";
     const mediaType = contentData?.mediaType || "image";
+    
+    // EvoGo API SEMPRE exige filename, senão retorna 400
+    // Se for imagem, precisamos de uma extensão válida (.jpg, .png) senão o WhatsApp pode enviar como documento
+    let fallbackExt = "bin";
+    if (mediaType === "image") fallbackExt = "jpg";
+    if (mediaType === "video") fallbackExt = "mp4";
+    if (mediaType === "audio") fallbackExt = "mp3";
+    
     body = {
-      number,
+      number: formattedNumber,
       url: contentData?.url,
       type: mediaType,
       caption: text,
+      delay: 1000,
+      filename: contentData?.filename || `file-${Date.now()}.${fallbackExt}`,
     };
-    // Adiciona filename apenas para documentos para evitar que WhatsApp trate imagens como arquivo
-    if (mediaType === "document") {
-      body.filename = contentData?.filename || `file-${Date.now()}`;
-    } else if (contentData?.filename && mediaType !== "image" && mediaType !== "video") {
-      body.filename = contentData.filename;
-    }
   } else if (type === "poll") {
     path = "/send/poll";
     body = {
-      number,
+      number: formattedNumber,
       name: contentData?.pollName || "Enquete",
       options: contentData?.pollOptions || contentData?.options || [],
       selectableCount: contentData?.selectableCount || 1
@@ -342,7 +352,7 @@ export async function evogoSendGeneric(url: string, apikey: string, number: stri
   } else if (type === "button") {
     path = "/send/button";
     body = {
-      number,
+      number: formattedNumber,
       title: contentData?.title || " ", // EvoGo requires title. Use a space if empty to avoid 400.
       description: text,
       footer: contentData?.footer || " ", // Also apply to footer just in case

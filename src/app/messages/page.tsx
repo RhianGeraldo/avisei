@@ -752,7 +752,36 @@ export default function MessagesPage() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-primary" />Enviar mensagem de teste</DialogTitle></DialogHeader>
           <form onSubmit={submitSend} className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="sendNumber">Número</Label><Input id="sendNumber" value={sendNumber} onChange={(e) => setSendNumber(e.target.value)} placeholder="5511999999999" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Instância</Label>
+                <Select
+                  value={sendInstance?.id || ""}
+                  onValueChange={(val) => {
+                    const inst = instances.find(i => i.id === val);
+                    if (inst) setSendInstance({ id: inst.id, name: inst.name });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a instância" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {instances.filter(i => i.status === "connected").map(inst => (
+                      <SelectItem key={inst.id} value={inst.id}>
+                        {inst.name}
+                      </SelectItem>
+                    ))}
+                    {instances.filter(i => i.status === "connected").length === 0 && (
+                      <SelectItem value="none" disabled>Nenhuma instância conectada</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sendNumber">Número</Label>
+                <Input id="sendNumber" value={sendNumber} onChange={(e) => setSendNumber(e.target.value)} placeholder="5511999999999" />
+              </div>
+            </div>
             
             <div className="space-y-2">
               <Label>Tipo de Mensagem</Label>
