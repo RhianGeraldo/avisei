@@ -674,6 +674,51 @@ export type Database = {
         }
         Relationships: []
       }
+      contacts: {
+        Row: {
+          id: string
+          created_at: string
+          company_id: string | null
+          unit_id: string | null
+          name: string | null
+          number: string
+          groups: Json | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          company_id?: string | null
+          unit_id?: string | null
+          name?: string | null
+          number: string
+          groups?: Json | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          company_id?: string | null
+          unit_id?: string | null
+          name?: string | null
+          number?: string
+          groups?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
