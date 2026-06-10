@@ -318,20 +318,36 @@ export async function evogoSendGeneric(url: string, apikey: string, number: stri
 
   if (type === "media") {
     path = "/send/media";
+    const mediaType = contentData?.mediaType || "image";
     body = {
       number,
       url: contentData?.url,
-      type: contentData?.mediaType || "image",
+      type: mediaType,
       caption: text,
-      filename: contentData?.filename || `file-${Date.now()}`
     };
+    // Adiciona filename apenas para documentos para evitar que WhatsApp trate imagens como arquivo
+    if (mediaType === "document") {
+      body.filename = contentData?.filename || `file-${Date.now()}`;
+    } else if (contentData?.filename && mediaType !== "image" && mediaType !== "video") {
+      body.filename = contentData.filename;
+    }
   } else if (type === "poll") {
     path = "/send/poll";
     body = {
       number,
       name: contentData?.pollName || "Enquete",
-      options: contentData?.options || [],
+      options: contentData?.pollOptions || contentData?.options || [],
       selectableCount: contentData?.selectableCount || 1
+    };
+  } else if (type === "button") {
+    path = "/send/button";
+    body = {
+      number,
+      title: contentData?.title || " ", // EvoGo requires title. Use a space if empty to avoid 400.
+      description: text,
+      footer: contentData?.footer || " ", // Also apply to footer just in case
+      buttons: contentData?.buttons || [],
+      delay: 1000
     };
   }
 
@@ -401,8 +417,22 @@ export async function sendEvogoText({ data }: { data: any }) {
   let errorMsg = null;
   let result = null;
 
+  const msgType = data.message_type || data.messageType || "text";
+  const content = data.content_data || {
+    url: data.url,
+    mediaType: data.mediaType,
+    filename: data.filename,
+    pollOptions: data.pollOptions,
+    options: data.options,
+    pollName: data.pollName,
+    selectableCount: data.selectableCount,
+    title: data.title,
+    footer: data.footer,
+    buttons: data.buttons
+  };
+
   try {
-    result = await evogoSendGeneric(url, inst.evogo_api_key, data.number, data.text, data.message_type, data.content_data);
+    result = await evogoSendGeneric(url, inst.evogo_api_key, data.number, data.text, msgType, content);
     success = true;
     return result;
   } catch (err: any) {
@@ -418,8 +448,8 @@ export async function sendEvogoText({ data }: { data: any }) {
       success,
       error: errorMsg,
       trigger_source: data.trigger_source || 'manual',
-      message_type: data.message_type || 'text',
-      content_data: data.content_data
+      message_type: msgType,
+      content_data: content
     });
   }
 }

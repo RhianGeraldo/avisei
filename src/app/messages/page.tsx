@@ -64,7 +64,10 @@ import {
   Video,
   Music,
   File as FileIcon,
-  MessageSquare
+  MessageSquare,
+  MousePointerClick,
+  Link as LinkIcon,
+  Phone
 } from "lucide-react";
 import { VARIABLES } from "@/lib/constants";
 import { MessagePreview } from "@/components/message-preview";
@@ -478,6 +481,7 @@ export default function MessagesPage() {
                     <TabsTrigger value="text" className="text-xs"><FileText className="h-3 w-3 mr-1" />Texto</TabsTrigger>
                     <TabsTrigger value="media" className="text-xs"><ImageIcon className="h-3 w-3 mr-1" />Mídia</TabsTrigger>
                     <TabsTrigger value="poll" className="text-xs"><ListFilter className="h-3 w-3 mr-1" />Enquete</TabsTrigger>
+                    <TabsTrigger value="button" className="text-xs"><MousePointerClick className="h-3 w-3 mr-1" />Botão</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -542,9 +546,138 @@ export default function MessagesPage() {
                 </div>
               )}
 
+              {messageType === "button" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Título do Botão (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: Whatsmeow" 
+                        value={contentData.title || ""} 
+                        onChange={(e) => setContentData({ ...contentData, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Rodapé (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: Clique nos botões abaixo" 
+                        value={contentData.footer || ""} 
+                        onChange={(e) => setContentData({ ...contentData, footer: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Botões Adicionados</Label>
+                    <div className="space-y-2">
+                      {(contentData.buttons || []).map((btn: any, i: number) => (
+                        <div key={i} className="flex flex-col gap-2 bg-muted/30 p-3 rounded-md border">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {btn.type === "url" ? "Link" : btn.type === "reply" ? "Resposta Rápida" : btn.type}
+                            </Badge>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6"
+                              onClick={() => {
+                                const newBtns = (contentData.buttons || []).filter((_: any, idx: number) => idx !== i);
+                                setContentData({ ...contentData, buttons: newBtns });
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          
+                          {btn.type === "url" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input 
+                                placeholder="Texto do botão" 
+                                value={btn.displayText} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].displayText = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                              <Input 
+                                placeholder="https://..." 
+                                value={btn.url} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].url = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {btn.type === "reply" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input 
+                                placeholder="Texto da Resposta" 
+                                value={btn.displayText} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].displayText = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                              <Input 
+                                placeholder="ID da resposta (Opcional)" 
+                                value={btn.id} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].id = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                            </div>
+                          )}
+                          
+                          {/* Fallback for other types */}
+                          {btn.type !== "url" && btn.type !== "reply" && (
+                            <div className="text-sm">
+                              {btn.type === "pix" && <span>Pix: {btn.name} ({btn.keyType})</span>}
+                              {btn.type === "call" && <span><Phone className="inline h-3 w-3 mr-1"/> {btn.displayText} ({btn.phoneNumber})</span>}
+                              {btn.type === "copy" && <span>Copiar: {btn.displayText}</span>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const newBtns = [...(contentData.buttons || []), { type: "url", displayText: "Link do Site", url: "https://..." }];
+                            setContentData({ ...contentData, buttons: newBtns });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> URL
+                        </Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const newBtns = [...(contentData.buttons || []), { type: "reply", displayText: "Resposta Rápida", id: Math.random().toString(36).substring(7) }];
+                            setContentData({ ...contentData, buttons: newBtns });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> Resposta
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <Label>{messageType === "media" ? "Legenda (opcional)" : messageType === "poll" ? "Pergunta" : "Template / Texto"}</Label>
+                  <Label>{messageType === "media" ? "Legenda (opcional)" : messageType === "poll" ? "Pergunta" : messageType === "button" ? "Mensagem Principal" : "Template / Texto"}</Label>
                   <div className="flex gap-1">
                     <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="Negrito" onClick={() => {
                       const el = document.getElementById("template-area") as HTMLTextAreaElement;
@@ -616,12 +749,279 @@ export default function MessagesPage() {
       </Dialog>
 
       <Dialog open={sendOpen} onOpenChange={setSendOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-primary" />Enviar mensagem</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Send className="h-5 w-5 text-primary" />Enviar mensagem de teste</DialogTitle></DialogHeader>
           <form onSubmit={submitSend} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="sendNumber">Número</Label><Input id="sendNumber" value={sendNumber} onChange={(e) => setSendNumber(e.target.value)} placeholder="5511999999999" /></div>
-            <div className="space-y-2"><Label htmlFor="sendText">Mensagem</Label><Textarea id="sendText" rows={5} value={sendText} onChange={(e) => setSendText(e.target.value)} placeholder="Digite a mensagem..." /></div>
-            <DialogFooter><Button type="submit" disabled={sendSubmitting}>{sendSubmitting ? "Enviando..." : "Enviar"}</Button></DialogFooter>
+            
+            <div className="space-y-2">
+              <Label>Tipo de Mensagem</Label>
+              <Tabs value={messageType} onValueChange={setMessageType} className="w-full">
+                <TabsList className="grid grid-cols-3 h-auto gap-1 bg-transparent p-0">
+                  <TabsTrigger value="text" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><FileText className="h-4 w-4 mr-1" />Texto</TabsTrigger>
+                  <TabsTrigger value="media" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><ImageIcon className="h-4 w-4 mr-1" />Mídia</TabsTrigger>
+                  <TabsTrigger value="poll" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><ListFilter className="h-4 w-4 mr-1" />Enquete</TabsTrigger>
+                  <TabsTrigger value="button" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><MousePointerClick className="h-4 w-4 mr-1" />Botão</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
+            <div className="space-y-4 pt-2 border-t">
+              {messageType === "media" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label>URL da Mídia</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="https://..." 
+                          value={contentData.url || ""} 
+                          onChange={(e) => setContentData({ ...contentData, url: e.target.value })}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          disabled={uploading}
+                          onClick={() => document.getElementById("media-upload-test")?.click()}
+                        >
+                          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        </Button>
+                        <input
+                          id="media-upload-test"
+                          type="file"
+                          className="hidden"
+                          accept={
+                            contentData.mediaType === "image" ? "image/*" :
+                            contentData.mediaType === "video" ? "video/*" :
+                            contentData.mediaType === "audio" ? "audio/*" :
+                            "*"
+                          }
+                          onChange={handleFileUpload}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tipo</Label>
+                      <Select 
+                        value={contentData.mediaType || "image"} 
+                        onValueChange={(v) => setContentData({ ...contentData, mediaType: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="image">Imagem</SelectItem>
+                          <SelectItem value="video">Vídeo</SelectItem>
+                          <SelectItem value="document">Documento</SelectItem>
+                          <SelectItem value="audio">Áudio</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {messageType === "poll" && (
+                <div className="space-y-2">
+                  <Label>Opções da Enquete (Pelo menos 2)</Label>
+                  <div className="space-y-2">
+                    {(contentData.pollOptions || ["", ""]).map((opt: string, i: number) => (
+                      <div key={i} className="flex gap-2">
+                        <Input 
+                          placeholder={`Opção ${i + 1}`} 
+                          value={opt} 
+                          onChange={(e) => {
+                            const newOpts = [...(contentData.pollOptions || ["", ""])];
+                            newOpts[i] = e.target.value;
+                            setContentData({ ...contentData, pollOptions: newOpts });
+                          }}
+                        />
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="icon" 
+                          disabled={(contentData.pollOptions || ["", ""]).length <= 2}
+                          onClick={() => {
+                            const newOpts = (contentData.pollOptions || ["", ""]).filter((_: any, idx: number) => idx !== i);
+                            setContentData({ ...contentData, pollOptions: newOpts });
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full"
+                      onClick={() => {
+                        const newOpts = [...(contentData.pollOptions || ["", ""]), ""];
+                        setContentData({ ...contentData, pollOptions: newOpts });
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Adicionar Opção
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {messageType === "button" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Título do Botão (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: Whatsmeow" 
+                        value={contentData.title || ""} 
+                        onChange={(e) => setContentData({ ...contentData, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Rodapé (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: Clique nos botões abaixo" 
+                        value={contentData.footer || ""} 
+                        onChange={(e) => setContentData({ ...contentData, footer: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Botões Adicionados</Label>
+                    <div className="space-y-2">
+                      {(contentData.buttons || []).map((btn: any, i: number) => (
+                        <div key={i} className="flex flex-col gap-2 bg-muted/30 p-3 rounded-md border">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {btn.type === "url" ? "Link" : btn.type === "reply" ? "Resposta Rápida" : btn.type}
+                            </Badge>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6"
+                              onClick={() => {
+                                const newBtns = (contentData.buttons || []).filter((_: any, idx: number) => idx !== i);
+                                setContentData({ ...contentData, buttons: newBtns });
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          
+                          {btn.type === "url" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input 
+                                placeholder="Texto do botão" 
+                                value={btn.displayText} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].displayText = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                              <Input 
+                                placeholder="https://..." 
+                                value={btn.url} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].url = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {btn.type === "reply" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input 
+                                placeholder="Texto da Resposta" 
+                                value={btn.displayText} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].displayText = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                              <Input 
+                                placeholder="ID da resposta (Opcional)" 
+                                value={btn.id} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].id = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                            </div>
+                          )}
+                          
+                          {/* Fallback for other types */}
+                          {btn.type !== "url" && btn.type !== "reply" && (
+                            <div className="text-sm">
+                              {btn.type === "pix" && <span>Pix: {btn.name} ({btn.keyType})</span>}
+                              {btn.type === "call" && <span><Phone className="inline h-3 w-3 mr-1"/> {btn.displayText} ({btn.phoneNumber})</span>}
+                              {btn.type === "copy" && <span>Copiar: {btn.displayText}</span>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const newBtns = [...(contentData.buttons || []), { type: "url", displayText: "Link do Site", url: "https://..." }];
+                            setContentData({ ...contentData, buttons: newBtns });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> URL
+                        </Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const newBtns = [...(contentData.buttons || []), { type: "reply", displayText: "Resposta Rápida", id: Math.random().toString(36).substring(7) }];
+                            setContentData({ ...contentData, buttons: newBtns });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> Resposta
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>
+                  {messageType === "media" ? "Legenda (opcional)" : 
+                   messageType === "poll" ? "Pergunta" : 
+                   messageType === "button" ? "Mensagem principal" :
+                   "Mensagem"}
+                </Label>
+                <Textarea
+                  id="sendText"
+                  rows={4}
+                  value={sendText}
+                  onChange={(e) => setSendText(e.target.value)}
+                  placeholder={
+                    messageType === "text" ? "Digite a mensagem..." : 
+                    "Legenda opcional..."
+                  }
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="submit" disabled={sendSubmitting || uploading}>
+                {sendSubmitting ? "Enviando..." : "Enviar"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

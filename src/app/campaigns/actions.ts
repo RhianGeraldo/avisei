@@ -14,12 +14,13 @@ export async function triggerCampaignWorker() {
 
 export async function startCampaignServer(campaignId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { substituirVariaveis, substituirVariaveisDeep } = await import("@/lib/utils");
   
   try {
     // 1. Buscar detalhes da campanha
     const { data: c, error: cErr } = await supabaseAdmin
       .from("campaigns")
-      .select("*, messages(template)")
+      .select("*, messages(template, message_type, content_data)")
       .eq("id", campaignId)
       .single();
     
@@ -40,21 +41,38 @@ export async function startCampaignServer(campaignId: string) {
     // 3. Preparar itens da fila
     const interval = c.interval_seconds || 30;
     const startTime = new Date();
-    const template = (c.messages as any)?.template || "";
+    
+    const templateData = c.messages as any;
+    const template = templateData?.template || "";
+    const messageType = templateData?.message_type || "text";
+    const contentData = templateData?.content_data || {};
 
-    const queueItems = contacts.map((contact: any, i: number) => ({
-      company_id: c.company_id,
-      unit_id: c.unit_id,
-      instance_id: c.instance_id,
-      message_id: c.message_id,
-      contact_id: contact.id,
-      campaign_id: c.id,
-      number: contact.number.replace(/\D/g, ""),
-      text: template,
-      status: "pending",
-      scheduled_at: new Date(startTime.getTime() + (i * interval * 1000)).toISOString(),
-      trigger_source: "campaign"
-    }));
+    const queueItems = contacts.map((contact: any, i: number) => {
+      const vars = {
+        ...(contact.variables as any),
+        nome: contact.name || "",
+        p_nome: contact.name?.trim().split(/\s+/)[0] || contact.name || "",
+      };
+
+      const text = substituirVariaveis(template, vars);
+      const resolvedContentData = substituirVariaveisDeep(contentData, vars);
+
+      return {
+        company_id: c.company_id,
+        unit_id: c.unit_id,
+        instance_id: c.instance_id,
+        message_id: c.message_id,
+        contact_id: contact.id,
+        campaign_id: c.id,
+        number: contact.number.replace(/\D/g, ""),
+        text: text,
+        message_type: messageType,
+        content_data: resolvedContentData,
+        status: "pending",
+        scheduled_at: new Date(startTime.getTime() + (i * interval * 1000)).toISOString(),
+        trigger_source: "campaign"
+      };
+    });
 
     // 4. Inserir na fila (Admin bypassa RLS)
     const { error: insErr } = await supabaseAdmin.from("send_queue").insert(queueItems);

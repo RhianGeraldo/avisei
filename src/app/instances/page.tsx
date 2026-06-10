@@ -57,7 +57,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { FileText, Image as ImageIcon, ListFilter, MapPin, MousePointer2, Phone, Smile, MessageSquare, LayoutTemplate, Link as LinkIcon, Upload, Loader2, Globe } from "lucide-react";
+import { FileText, Image as ImageIcon, ListFilter, MapPin, MousePointer2, Phone, Smile, MessageSquare, LayoutTemplate, Link as LinkIcon, Upload, Loader2, Globe, MousePointerClick } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 type InstanceStatus = Database["public"]["Enums"]["instance_status"];
@@ -71,6 +71,7 @@ const STATUS_LABELS: Record<string, string> = {
   connecting: "Conectando",
   disconnected: "Desconectado",
   failed: "Falha",
+  error: "Erro",
 };
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -78,6 +79,7 @@ const STATUS_CLASSES: Record<string, string> = {
   connecting: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   disconnected: "bg-muted/50 text-muted-foreground border-muted-foreground/20",
   failed: "bg-destructive/10 text-destructive border-destructive/20",
+  error: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
 export default function InstancesPage() {
@@ -872,6 +874,7 @@ export default function InstancesPage() {
                   <TabsTrigger value="text" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><FileText className="h-4 w-4 mr-1" />Texto</TabsTrigger>
                   <TabsTrigger value="media" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><ImageIcon className="h-4 w-4 mr-1" />Mídia</TabsTrigger>
                   <TabsTrigger value="poll" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><ListFilter className="h-4 w-4 mr-1" />Enquete</TabsTrigger>
+                  <TabsTrigger value="button" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border"><MousePointerClick className="h-4 w-4 mr-1" />Botão</TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
@@ -978,10 +981,141 @@ export default function InstancesPage() {
                 </div>
               )}
 
+              {messageType === "button" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Título do Botão (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: Whatsmeow" 
+                        value={contentData.title || ""} 
+                        onChange={(e) => setContentData({ ...contentData, title: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Rodapé (Opcional)</Label>
+                      <Input 
+                        placeholder="Ex: Clique nos botões abaixo" 
+                        value={contentData.footer || ""} 
+                        onChange={(e) => setContentData({ ...contentData, footer: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Botões Adicionados</Label>
+                    <div className="space-y-2">
+                      {(contentData.buttons || []).map((btn: any, i: number) => (
+                        <div key={i} className="flex flex-col gap-2 bg-muted/30 p-3 rounded-md border">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {btn.type === "url" ? "Link" : btn.type === "reply" ? "Resposta Rápida" : btn.type}
+                            </Badge>
+                            <Button 
+                              type="button" 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6"
+                              onClick={() => {
+                                const newBtns = (contentData.buttons || []).filter((_: any, idx: number) => idx !== i);
+                                setContentData({ ...contentData, buttons: newBtns });
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          
+                          {btn.type === "url" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input 
+                                placeholder="Texto do botão" 
+                                value={btn.displayText} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].displayText = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                              <Input 
+                                placeholder="https://..." 
+                                value={btn.url} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].url = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {btn.type === "reply" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input 
+                                placeholder="Texto da Resposta" 
+                                value={btn.displayText} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].displayText = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                              <Input 
+                                placeholder="ID da resposta (Opcional)" 
+                                value={btn.id} 
+                                onChange={(e) => {
+                                  const newBtns = [...contentData.buttons];
+                                  newBtns[i].id = e.target.value;
+                                  setContentData({ ...contentData, buttons: newBtns });
+                                }}
+                              />
+                            </div>
+                          )}
+                          
+                          {/* Fallback for other types */}
+                          {btn.type !== "url" && btn.type !== "reply" && (
+                            <div className="text-sm">
+                              {btn.type === "pix" && <span>Pix: {btn.name} ({btn.keyType})</span>}
+                              {btn.type === "call" && <span><Phone className="inline h-3 w-3 mr-1"/> {btn.displayText} ({btn.phoneNumber})</span>}
+                              {btn.type === "copy" && <span>Copiar: {btn.displayText}</span>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const newBtns = [...(contentData.buttons || []), { type: "url", displayText: "Link do Site", url: "https://..." }];
+                            setContentData({ ...contentData, buttons: newBtns });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> URL
+                        </Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const newBtns = [...(contentData.buttons || []), { type: "reply", displayText: "Resposta Rápida", id: Math.random().toString(36).substring(7) }];
+                            setContentData({ ...contentData, buttons: newBtns });
+                          }}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> Resposta
+                        </Button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">Para adicionar botões Pix ou de Ligação use a criação completa em templates.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>
                   {messageType === "media" ? "Legenda (opcional)" : 
                    messageType === "poll" ? "Pergunta" : 
+                   messageType === "button" ? "Mensagem principal" :
                    "Mensagem"}
                 </Label>
                 <Textarea
@@ -991,7 +1125,7 @@ export default function InstancesPage() {
                   onChange={(e) => setSendText(e.target.value)}
                   placeholder={
                     messageType === "text" ? "Digite a mensagem..." : 
-                    "Legenda opcional..."
+                    "Texto principal / Legenda..."
                   }
                 />
               </div>
