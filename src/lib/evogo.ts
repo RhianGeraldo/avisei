@@ -463,3 +463,34 @@ export async function sendEvogoText({ data }: { data: any }) {
     });
   }
 }
+
+export async function fetchEvogoGroups({ data }: { data: any }) {
+  const { url } = await loadEvogoSettings();
+  const { data: inst } = await supabaseAdmin.from("instances").select("evogo_api_key").eq("id", data.instanceId).maybeSingle();
+  if (!inst) throw new Error("Instância não encontrada");
+
+  // Get Groups (Doc: GET /group/list)
+  const res = await evogoFetch("/group/list", {
+    url,
+    apikey: inst.evogo_api_key,
+    method: "GET"
+  });
+
+  return res.data || res || [];
+}
+
+export async function fetchEvogoGroupInfo({ data }: { data: any }) {
+  const { url } = await loadEvogoSettings();
+  const { data: inst } = await supabaseAdmin.from("instances").select("evogo_api_key").eq("id", data.instanceId).maybeSingle();
+  if (!inst) throw new Error("Instância não encontrada");
+
+  // Get Group Info (Doc: POST /group/info)
+  const res = await evogoFetch("/group/info", {
+    url,
+    apikey: inst.evogo_api_key,
+    method: "POST",
+    body: { groupJid: data.groupJid }
+  });
+
+  return res.data || res;
+}

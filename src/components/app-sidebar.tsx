@@ -12,6 +12,7 @@ import {
   LogOut,
   Sparkles,
   Megaphone,
+  Users,
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,6 +42,8 @@ export function AppSidebar() {
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
     { title: "Unidades", url: "/units", icon: Store },
     { title: "Instâncias", url: "/instances", icon: Smartphone },
+    { title: "Grupos", url: "/groups", icon: Users },
+    { title: "Base de Leads", url: "/contacts", icon: Users },
     { title: "Mensagens", url: "/messages", icon: MessageSquareMore },
     { title: "Automações", url: "/automations", icon: Clock },
     { title: "Campanhas", url: "/campaigns", icon: Megaphone },
