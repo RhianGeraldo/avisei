@@ -22,6 +22,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -266,6 +267,9 @@ export default function GroupsPage() {
         <DialogContent className="max-w-xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>{selectedGroup?.subject || selectedGroup?.name || "Detalhes do Grupo"}</DialogTitle>
+            <DialogDescription>
+              Visualize os participantes deste grupo e importe-os diretamente como leads.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto pr-2 mt-4">
@@ -331,11 +335,11 @@ export default function GroupsPage() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Selecionar Unidade</DialogTitle>
+            <DialogDescription>
+              Para qual unidade deseja enviar os leads deste grupo?
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <p className="text-sm text-muted-foreground">
-              Para qual unidade deseja enviar os leads deste grupo?
-            </p>
             <div className="flex flex-col gap-2">
               <Select
                 value={selectedUnitId}
