@@ -69,16 +69,24 @@ export default function ContactsPage() {
     },
   });
 
-  // Lista de colaboradoras únicas da empresa (busca direta e rápida de lead_capture_sessions)
+  // Lista de colaboradoras que realmente possuem leads na empresa/unidade selecionada
   const { data: collaboratorsList = [] } = useQuery({
-    queryKey: ["collaborators-list", companyId],
+    queryKey: ["collaborators-list", companyId, selectedUnitId],
     queryFn: async () => {
-      let query = supabase.from("lead_capture_sessions").select("person_name");
+      let query = supabase
+        .from("lead_capture_sessions")
+        .select("person_name, leads_inserted, leads_updated, unit_id");
       if (companyId) query = query.eq("company_id", companyId);
+      if (selectedUnitId && selectedUnitId !== "all") {
+        query = query.eq("unit_id", selectedUnitId);
+      }
       const { data } = await query;
       const set = new Set<string>();
       (data || []).forEach((s: any) => {
-        if (s.person_name?.trim()) set.add(s.person_name.trim());
+        const hasLeads = (s.leads_inserted ?? 0) > 0 || (s.leads_updated ?? 0) > 0;
+        if (s.person_name?.trim() && hasLeads) {
+          set.add(s.person_name.trim());
+        }
       });
       return Array.from(set).sort();
     },
@@ -113,7 +121,16 @@ export default function ContactsPage() {
 
       if (debouncedSearch.trim()) {
         const clean = debouncedSearch.trim();
-        query = query.or(`number.ilike.%${clean}%,name.ilike.%${clean}%`);
+        const digits = clean.replace(/\D/g, "");
+        const safeText = clean.replace(/[,()]/g, "").trim();
+
+        if (digits.length >= 3 && safeText && safeText !== digits) {
+          query = query.or(`number.ilike.%${digits}%,name.ilike.%${safeText}%`);
+        } else if (digits.length >= 3) {
+          query = query.or(`number.ilike.%${digits}%,name.ilike.%${digits}%`);
+        } else if (safeText) {
+          query = query.or(`number.ilike.%${safeText}%,name.ilike.%${safeText}%`);
+        }
       }
 
       if (selectedUnitId && selectedUnitId !== "all") {
@@ -147,6 +164,7 @@ export default function ContactsPage() {
 
   const handleUnitChange = (val: string) => {
     setSelectedUnitId(val);
+    setSelectedCollaborator("all");
     setPage(1);
   };
 
@@ -183,7 +201,16 @@ export default function ContactsPage() {
         if (companyId) query = query.eq("company_id", companyId);
         if (debouncedSearch.trim()) {
           const clean = debouncedSearch.trim();
-          query = query.or(`number.ilike.%${clean}%,name.ilike.%${clean}%`);
+          const digits = clean.replace(/\D/g, "");
+          const safeText = clean.replace(/[,()]/g, "").trim();
+
+          if (digits.length >= 3 && safeText && safeText !== digits) {
+            query = query.or(`number.ilike.%${digits}%,name.ilike.%${safeText}%`);
+          } else if (digits.length >= 3) {
+            query = query.or(`number.ilike.%${digits}%,name.ilike.%${digits}%`);
+          } else if (safeText) {
+            query = query.or(`number.ilike.%${safeText}%,name.ilike.%${safeText}%`);
+          }
         }
         if (selectedUnitId && selectedUnitId !== "all") {
           query = query.eq("unit_id", selectedUnitId);

@@ -204,14 +204,23 @@ export default function CampaignsPage() {
   const filteredLeads = useMemo(() => {
     return allLeads.filter((l: any) => {
       const searchLower = leadsSearch.toLowerCase();
+      const searchDigits = leadsSearch.replace(/\D/g, "");
       const matchSearch =
         !leadsSearch ||
+        (searchDigits.length >= 3 && l.number?.includes(searchDigits)) ||
         l.number?.includes(leadsSearch) ||
         l.name?.toLowerCase().includes(searchLower) ||
         (Array.isArray(l.groups) &&
-          l.groups.some((g: any) => g.captured_by?.toLowerCase().includes(searchLower)));
+          l.groups.some(
+            (g: any) =>
+              g.captured_by?.toLowerCase().includes(searchLower) ||
+              g.name?.toLowerCase().includes(searchLower),
+          ));
 
-      const matchUnit = leadsUnitFilter === "all" || l.units?.id === leadsUnitFilter;
+      const matchUnit =
+        leadsUnitFilter === "all" ||
+        l.unit_id === leadsUnitFilter ||
+        l.units?.id === leadsUnitFilter;
       const matchGroup =
         leadsGroupFilter === "all" ||
         (Array.isArray(l.groups) && l.groups.some((g: any) => g.name === leadsGroupFilter));
