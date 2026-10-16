@@ -45,6 +45,7 @@ export default function ContactsPage() {
   const [pageSize, setPageSize] = useState(50);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("all");
   const [selectedCollaborator, setSelectedCollaborator] = useState<string>("all");
   const [exporting, setExporting] = useState(false);
 
@@ -56,6 +57,17 @@ export default function ContactsPage() {
     }, 350);
     return () => clearTimeout(handler);
   }, [searchTerm]);
+
+  // Lista de unidades da empresa
+  const { data: unitsList = [] } = useQuery({
+    queryKey: ["units-list", companyId],
+    queryFn: async () => {
+      let query = supabase.from("units").select("id, name").order("name");
+      if (companyId) query = query.eq("company_id", companyId);
+      const { data } = await query;
+      return (data as { id: string; name: string }[]) ?? [];
+    },
+  });
 
   // Lista de colaboradoras únicas da empresa (busca direta e rápida de lead_capture_sessions)
   const { data: collaboratorsList = [] } = useQuery({
@@ -80,6 +92,7 @@ export default function ContactsPage() {
       page,
       pageSize,
       debouncedSearch,
+      selectedUnitId,
       selectedCollaborator,
     ],
     queryFn: async () => {
@@ -101,6 +114,10 @@ export default function ContactsPage() {
       if (debouncedSearch.trim()) {
         const clean = debouncedSearch.trim();
         query = query.or(`number.ilike.%${clean}%,name.ilike.%${clean}%`);
+      }
+
+      if (selectedUnitId && selectedUnitId !== "all") {
+        query = query.eq("unit_id", selectedUnitId);
       }
 
       if (selectedCollaborator && selectedCollaborator !== "all") {
@@ -127,6 +144,11 @@ export default function ContactsPage() {
   const contacts = data?.contacts ?? [];
   const totalCount = data?.total ?? 0;
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
+
+  const handleUnitChange = (val: string) => {
+    setSelectedUnitId(val);
+    setPage(1);
+  };
 
   const handleCollaboratorChange = (val: string) => {
     setSelectedCollaborator(val);
@@ -162,6 +184,9 @@ export default function ContactsPage() {
         if (debouncedSearch.trim()) {
           const clean = debouncedSearch.trim();
           query = query.or(`number.ilike.%${clean}%,name.ilike.%${clean}%`);
+        }
+        if (selectedUnitId && selectedUnitId !== "all") {
+          query = query.eq("unit_id", selectedUnitId);
         }
         if (selectedCollaborator && selectedCollaborator !== "all") {
           query = query.contains(
@@ -247,9 +272,6 @@ export default function ContactsPage() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
-            <p className="text-muted-foreground hidden lg:block">
-              Sua base de leads importada dos grupos de WhatsApp.
-            </p>
             <Badge
               variant="secondary"
               className="text-sm px-3 py-1 border-primary/20 bg-primary/10 text-primary whitespace-nowrap"
@@ -261,7 +283,7 @@ export default function ContactsPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-            <div className="relative w-full sm:w-72">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar número ou nome..."
@@ -270,12 +292,30 @@ export default function ContactsPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            {unitsList.length > 0 && (
+              <Select
+                value={selectedUnitId}
+                onValueChange={handleUnitChange}
+              >
+                <SelectTrigger className="w-full sm:w-44 bg-background">
+                  <SelectValue placeholder="Unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {unitsList.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {collaboratorsList.length > 0 && (
               <Select
                 value={selectedCollaborator}
                 onValueChange={handleCollaboratorChange}
               >
-                <SelectTrigger className="w-full sm:w-48 bg-background">
+                <SelectTrigger className="w-full sm:w-44 bg-background">
                   <SelectValue placeholder="Colaboradora" />
                 </SelectTrigger>
                 <SelectContent>
