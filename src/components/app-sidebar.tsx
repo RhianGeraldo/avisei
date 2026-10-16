@@ -13,6 +13,7 @@ import {
   Sparkles,
   Megaphone,
   Users,
+  QrCode,
 } from "lucide-react";
 import {
   Sidebar,
@@ -43,6 +44,7 @@ export function AppSidebar() {
     { title: "Unidades", url: "/units", icon: Store },
     { title: "Instâncias", url: "/instances", icon: Smartphone },
     { title: "Grupos", url: "/groups", icon: Users },
+    { title: "Captura de Leads", url: "/lead-capture", icon: QrCode },
     { title: "Base de Leads", url: "/contacts", icon: Users },
     { title: "Mensagens", url: "/messages", icon: MessageSquareMore },
     { title: "Automações", url: "/automations", icon: Clock },

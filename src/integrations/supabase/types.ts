@@ -719,6 +719,141 @@ export type Database = {
           },
         ]
       }
+      lead_capture_links: {
+        Row: {
+          id: string
+          company_id: string
+          unit_id: string | null
+          name: string
+          token: string
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          unit_id?: string | null
+          name: string
+          token: string
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          unit_id?: string | null
+          name?: string
+          token?: string
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_capture_links_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_capture_links_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_capture_sessions: {
+        Row: {
+          id: string
+          link_id: string
+          company_id: string
+          unit_id: string | null
+          person_name: string
+          instance_id: string | null
+          status: string
+          groups_total: number
+          groups_done: number
+          groups_failed: number
+          participants_processed: number
+          skipped_without_phone: number
+          leads_inserted: number
+          leads_updated: number
+          processed_group_jids: Json
+          error: string | null
+          heartbeat_at: string | null
+          completed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          link_id: string
+          company_id: string
+          unit_id?: string | null
+          person_name: string
+          instance_id?: string | null
+          status?: string
+          groups_total?: number
+          groups_done?: number
+          groups_failed?: number
+          participants_processed?: number
+          skipped_without_phone?: number
+          leads_inserted?: number
+          leads_updated?: number
+          processed_group_jids?: Json
+          error?: string | null
+          heartbeat_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          link_id?: string
+          company_id?: string
+          unit_id?: string | null
+          person_name?: string
+          instance_id?: string | null
+          status?: string
+          groups_total?: number
+          groups_done?: number
+          groups_failed?: number
+          participants_processed?: number
+          skipped_without_phone?: number
+          leads_inserted?: number
+          leads_updated?: number
+          processed_group_jids?: Json
+          error?: string | null
+          heartbeat_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_capture_sessions_link_id_fkey"
+            columns: ["link_id"]
+            isOneToOne: false
+            referencedRelation: "lead_capture_links"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_capture_sessions_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

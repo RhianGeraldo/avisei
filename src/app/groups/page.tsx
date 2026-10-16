@@ -32,6 +32,14 @@ import { Users, Loader2, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
+import {
+  extractParticipantName,
+  extractParticipantPhone,
+  getGroupJid,
+  getGroupName,
+  getGroupParticipants,
+  isParticipantAdmin,
+} from "@/lib/whatsapp-groups";
 
 export default function GroupsPage() {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
@@ -40,7 +48,7 @@ export default function GroupsPage() {
   const [unitModalOpen, setUnitModalOpen] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   
-  const { companyId } = useAuth();
+  const { session } = useAuth();
 
   // Fetch all instances
   const { data: instances = [], isLoading: loadingInstances } = useQuery({
@@ -128,15 +136,17 @@ export default function GroupsPage() {
     
     setImporting(true);
     try {
-      const participantsArray = selectedGroup.Participants || selectedGroup.participants;
-      const groupJid = typeof selectedGroup.JID === 'string' ? selectedGroup.JID : typeof selectedGroup.id === 'string' ? selectedGroup.id : selectedGroup.id?._serialized || selectedGroup.jid;
-      const groupName = selectedGroup.Name || selectedGroup.subject || selectedGroup.name || "Grupo sem nome";
+      const participantsArray = getGroupParticipants(selectedGroup) ?? [];
+      const groupJid = getGroupJid(selectedGroup);
+      const groupName = getGroupName(selectedGroup);
 
       const res = await fetch('/api/contacts/import-group', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
         body: JSON.stringify({
-          companyId,
           unitId: selectedUnitId,
           groupName,
           groupJid,
@@ -148,7 +158,8 @@ export default function GroupsPage() {
       
       if (!res.ok) throw new Error(data.error || "Erro ao importar");
       
-      toast.success(`${data.stats.inserted} adicionados, ${data.stats.updated} atualizados!`);
+      const skippedMsg = data.stats.skipped ? ` (${data.stats.skipped} sem telefone visível ignorados)` : "";
+      toast.success(`${data.stats.inserted} adicionados, ${data.stats.updated} atualizados!${skippedMsg}`);
       setUnitModalOpen(false);
     } catch (err: any) {
       toast.error("Falha ao importar contatos: " + err.message);
@@ -285,15 +296,14 @@ export default function GroupsPage() {
                   </div>
                   {(selectedGroup.Participants || selectedGroup.participants).map((p: any, idx: number) => {
                     // API returns participants as objects or strings
-                    const jid = typeof p === 'string' ? p : p.PhoneNumber || p.JID || p.id || p.jid;
-                    const phone = jid?.split('@')[0];
-                    const name = typeof p === 'object' ? p.DisplayName || p.ContactName || p.name || "" : "";
-                    const isAdmin = p.IsAdmin || p.IsSuperAdmin || p.admin === 'admin' || p.admin === 'superadmin' || p.isAdmin;
+                    const phone = extractParticipantPhone(p);
+                    const name = extractParticipantName(p) ?? "";
+                    const isAdmin = isParticipantAdmin(p);
                     
                     return (
                       <div key={idx} className="grid grid-cols-2 gap-4 items-center p-2.5 bg-muted/40 rounded-lg border border-border/50 hover:bg-muted/60 transition-colors">
                         <div className="font-mono text-sm flex items-center gap-2">
-                          {phone || "Desconhecido"}
+                          {phone || <span className="text-muted-foreground italic font-sans text-xs">Sem telefone visível</span>}
                           {isAdmin && (
                             <Badge variant="outline" className="text-[9px] h-4 px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
                               Admin
