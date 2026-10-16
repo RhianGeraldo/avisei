@@ -78,7 +78,7 @@ export default function LeadCapturePage() {
   const { data: units = [] } = useQuery({
     queryKey: ["all-units"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("units").select("id, name").order("name");
+      const { data, error } = await supabase.from("units").select("id, name, company_id").order("name");
       if (error) throw error;
       return data ?? [];
     },
@@ -126,35 +126,53 @@ export default function LeadCapturePage() {
     toast.success("Link copiado!");
   };
 
-  const createLink = async () => {
-    if (!companyId) {
-      toast.error("Sua conta não está vinculada a nenhuma empresa.");
-      return;
+  const resolveCompanyId = async (targetUnitId: string) => {
+    if (targetUnitId && targetUnitId !== GENERAL) {
+      const selectedUnit = units.find((u: any) => u.id === targetUnitId);
+      if (selectedUnit?.company_id) return selectedUnit.company_id;
     }
+    if (companyId) return companyId;
+    const { data: firstCompany } = await supabase
+      .from("companies")
+      .select("id")
+      .order("created_at")
+      .limit(1)
+      .maybeSingle();
+    if (firstCompany?.id) return firstCompany.id;
+    throw new Error("Nenhuma empresa cadastrada no sistema.");
+  };
+
+  const createLink = async () => {
     if (!name.trim()) {
       toast.error("Informe um nome para o link.");
       return;
     }
     setSaving(true);
-    const token = generateToken();
-    const { error } = await supabase.from("lead_capture_links").insert({
-      company_id: companyId,
-      unit_id: unitId === GENERAL ? null : unitId,
-      name: name.trim(),
-      token,
-      created_by: user?.id ?? null,
-    });
-    setSaving(false);
-    if (error) {
-      toast.error("Falha ao criar link: " + error.message);
-      return;
+    try {
+      const targetCompanyId = await resolveCompanyId(unitId);
+      const token = generateToken();
+      const { error } = await supabase.from("lead_capture_links").insert({
+        company_id: targetCompanyId,
+        unit_id: unitId === GENERAL ? null : unitId,
+        name: name.trim(),
+        token,
+        created_by: user?.id ?? null,
+      });
+      if (error) {
+        toast.error("Falha ao criar link: " + error.message);
+        return;
+      }
+      toast.success("Link criado!");
+      copyLink(token).catch(() => {});
+      setOpen(false);
+      setName("");
+      setUnitId(GENERAL);
+      qc.invalidateQueries({ queryKey: ["lead-capture-links"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao identificar empresa.");
+    } finally {
+      setSaving(false);
     }
-    toast.success("Link criado!");
-    copyLink(token).catch(() => {});
-    setOpen(false);
-    setName("");
-    setUnitId(GENERAL);
-    qc.invalidateQueries({ queryKey: ["lead-capture-links"] });
   };
 
   const toggleActive = async (id: string, active: boolean) => {
