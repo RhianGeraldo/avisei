@@ -37,7 +37,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
-import { Copy, Link2, Loader2, Plus, Trash2 } from "lucide-react";
+import { Copy, Link2, Loader2, Plus, Trash2, Pencil } from "lucide-react";
 
 const GENERAL = "geral";
 
@@ -74,6 +74,13 @@ export default function LeadCapturePage() {
   const [name, setName] = useState("");
   const [unitId, setUnitId] = useState<string>(GENERAL);
   const [saving, setSaving] = useState(false);
+
+  // Estados para edição do link
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingLink, setEditingLink] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editUnitId, setEditUnitId] = useState<string>(GENERAL);
+  const [editingSaving, setEditingSaving] = useState(false);
 
   const { data: units = [] } = useQuery({
     queryKey: ["all-units"],
@@ -175,6 +182,47 @@ export default function LeadCapturePage() {
     }
   };
 
+  const handleOpenEdit = (l: any) => {
+    setEditingLink(l);
+    setEditName(l.name || "");
+    setEditUnitId(l.unit_id || GENERAL);
+    setEditOpen(true);
+  };
+
+  const updateLink = async () => {
+    if (!editingLink) return;
+    if (!editName.trim()) {
+      toast.error("Informe um nome para o link.");
+      return;
+    }
+    setEditingSaving(true);
+    try {
+      const { error } = await supabase
+        .from("lead_capture_links")
+        .update({
+          name: editName.trim(),
+          unit_id: editUnitId === GENERAL ? null : editUnitId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingLink.id);
+
+      if (error) {
+        toast.error("Falha ao atualizar link: " + error.message);
+        return;
+      }
+
+      toast.success("Link atualizado!");
+      setEditOpen(false);
+      setEditingLink(null);
+      qc.invalidateQueries({ queryKey: ["lead-capture-links"] });
+      qc.invalidateQueries({ queryKey: ["lead-capture-sessions"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao salvar alterações.");
+    } finally {
+      setEditingSaving(false);
+    }
+  };
+
   const toggleActive = async (id: string, active: boolean) => {
     const { error } = await supabase
       .from("lead_capture_links")
@@ -233,9 +281,18 @@ export default function LeadCapturePage() {
                 links.map((l: any) => (
                   <TableRow key={l.id}>
                     <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <Link2 className="h-4 w-4 text-muted-foreground" />
-                        {l.name}
+                      <div className="flex items-center gap-2 group">
+                        <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="truncate max-w-[260px]">{l.name}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleOpenEdit(l)}
+                          title="Editar link"
+                        >
+                          <Pencil className="h-3 w-3 text-muted-foreground" />
+                        </Button>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -245,24 +302,34 @@ export default function LeadCapturePage() {
                       <Switch checked={l.active} onCheckedChange={(v) => toggleActive(l.id, v)} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyLink(l.token)}
-                        disabled={!l.active}
-                      >
-                        <Copy className="h-4 w-4 mr-2" /> Copiar link
-                      </Button>
-                      <ConfirmDialog
-                        title="Excluir link?"
-                        description="O link deixará de funcionar e o histórico de capturas dele será removido. Os leads já importados permanecem."
-                        onConfirm={() => deleteLink(l.id)}
-                        trigger={
-                          <Button variant="ghost" size="icon">
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        }
-                      />
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyLink(l.token)}
+                          disabled={!l.active}
+                        >
+                          <Copy className="h-4 w-4 mr-2" /> Copiar link
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenEdit(l)}
+                          title="Editar link"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <ConfirmDialog
+                          title="Excluir link?"
+                          description="O link deixará de funcionar e o histórico de capturas dele será removido. Os leads já importados permanecem."
+                          onConfirm={() => deleteLink(l.id)}
+                          trigger={
+                            <Button variant="ghost" size="icon" title="Excluir link">
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          }
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -389,6 +456,63 @@ export default function LeadCapturePage() {
             <Button onClick={createLink} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Criar e copiar link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Editar link de captura</DialogTitle>
+            <DialogDescription>
+              Altere o nome e a unidade associada a este link.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-link-name">Nome do link</Label>
+              <Input
+                id="edit-link-name"
+                placeholder="Ex: Parceiros - Unidade Centro"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    updateLink();
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Unidade</Label>
+              <Select value={editUnitId} onValueChange={setEditUnitId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={GENERAL}>Geral (sem unidade)</SelectItem>
+                  {units.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={editingSaving}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={updateLink} disabled={editingSaving || !editName.trim()}>
+              {editingSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Salvar alterações
             </Button>
           </DialogFooter>
         </DialogContent>
