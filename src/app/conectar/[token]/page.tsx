@@ -273,6 +273,11 @@ export default function ConnectPage() {
                 {resolvedUnitName ? ` (${resolvedUnitName})` : ""}
               </div>
               <Summary session={session} />
+              {session.error && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg text-center">
+                  Aviso: {session.error}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -283,6 +288,9 @@ export default function ConnectPage() {
                 }
                 text={session.error || "Ocorreu um erro. Tente novamente."}
               />
+              {(session.leadsInserted > 0 || session.groupsDone > 0) && (
+                <Summary session={session} />
+              )}
               <Button className="w-full" variant="outline" onClick={reset}>
                 <RefreshCw className="h-4 w-4 mr-2" /> Tentar novamente
               </Button>

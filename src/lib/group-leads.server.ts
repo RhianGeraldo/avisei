@@ -13,12 +13,15 @@ export type GroupOrigin = {
   capture_session_id?: string;
 };
 
-const CHUNK_SIZE = 500;
+const CHUNK_SIZE = 150;
 
 /**
- * Upsert em lote via função SQL `upsert_group_contacts`:
- * - contatos novos são inseridos
- * - contatos existentes recebem o grupo (se ainda não tiverem) e unit_id/name se vazios
+ * Upsert em lote direto via Supabase client:
+ * - Deduplica contatos da lista de entrada por número
+ * - Busca registros existentes por (company_id, number)
+ * - Novos contatos são inseridos com o grupo
+ * - Contatos existentes recebem o novo grupo no array JSONB (sem duplicar JID)
+ * - Preenche unit_id e name se ainda não estavam definidos
  */
 export async function upsertGroupContacts(params: {
   companyId: string;
@@ -27,26 +30,89 @@ export async function upsertGroupContacts(params: {
   contacts: GroupContact[];
 }): Promise<{ inserted: number; updated: number }> {
   const { companyId, unitId, group, contacts } = params;
+
+  if (!contacts || contacts.length === 0) {
+    return { inserted: 0, updated: 0 };
+  }
+
+  // 1. Deduplica contatos recebidos por número
+  const dedupedMap = new Map<string, GroupContact>();
+  for (const c of contacts) {
+    if (!c.number) continue;
+    const existing = dedupedMap.get(c.number);
+    if (!existing) {
+      dedupedMap.set(c.number, c);
+    } else if (!existing.name && c.name) {
+      dedupedMap.set(c.number, c);
+    }
+  }
+
+  const list = Array.from(dedupedMap.values());
   let inserted = 0;
   let updated = 0;
 
-  for (let i = 0; i < contacts.length; i += CHUNK_SIZE) {
-    const chunk = contacts.slice(i, i + CHUNK_SIZE).map((c) => ({
-      number: c.number,
-      name: c.name,
-      groups: [group],
-    }));
+  for (let i = 0; i < list.length; i += CHUNK_SIZE) {
+    const chunk = list.slice(i, i + CHUNK_SIZE);
+    const numbers = chunk.map((c) => c.number);
 
-    const { data, error } = await supabaseAdmin.rpc("upsert_group_contacts", {
-      p_company_id: companyId,
-      p_unit_id: unitId,
-      p_contacts: chunk,
-    });
-    if (error) throw new Error(`Erro ao gravar leads: ${error.message}`);
+    // 2. Busca contatos que já existem nessa empresa
+    const { data: existingRows, error: selectErr } = await supabaseAdmin
+      .from("contacts")
+      .select("id, number, name, unit_id, groups")
+      .eq("company_id", companyId)
+      .in("number", numbers);
 
-    const row = Array.isArray(data) ? data[0] : data;
-    inserted += row?.inserted ?? 0;
-    updated += row?.updated ?? 0;
+    if (selectErr) {
+      throw new Error(`Erro ao consultar leads existentes: ${selectErr.message}`);
+    }
+
+    const existingMap = new Map<string, any>(
+      (existingRows ?? []).map((row: any) => [row.number, row]),
+    );
+
+    const now = new Date().toISOString();
+    const toUpsert: any[] = [];
+
+    for (const c of chunk) {
+      const existing = existingMap.get(c.number);
+
+      if (existing) {
+        updated++;
+        const currentGroups: any[] = Array.isArray(existing.groups) ? existing.groups : [];
+        const hasGroup = currentGroups.some((g: any) => g?.jid === group.jid);
+        const mergedGroups = hasGroup ? currentGroups : [...currentGroups, group];
+
+        toUpsert.push({
+          company_id: companyId,
+          number: c.number,
+          name: existing.name || c.name || null,
+          unit_id: existing.unit_id || unitId || null,
+          groups: mergedGroups,
+          updated_at: now,
+        });
+      } else {
+        inserted++;
+        toUpsert.push({
+          company_id: companyId,
+          number: c.number,
+          name: c.name || null,
+          unit_id: unitId || null,
+          groups: [group],
+          created_at: now,
+          updated_at: now,
+        });
+      }
+    }
+
+    if (toUpsert.length > 0) {
+      const { error: upsertErr } = await supabaseAdmin
+        .from("contacts")
+        .upsert(toUpsert, { onConflict: "company_id,number" });
+
+      if (upsertErr) {
+        throw new Error(`Erro ao gravar leads no banco: ${upsertErr.message}`);
+      }
+    }
   }
 
   return { inserted, updated };

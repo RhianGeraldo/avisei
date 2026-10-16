@@ -368,6 +368,8 @@ async function runExtraction(sessionId: string) {
       heartbeat_at: new Date().toISOString(),
     });
 
+    let lastError: string | null = null;
+
     for (const group of groups) {
       if (processed.has(group.jid)) continue;
 
@@ -406,9 +408,10 @@ async function runExtraction(sessionId: string) {
         counters.leads_inserted += inserted;
         counters.leads_updated += updated;
       } catch (err: any) {
+        lastError = err?.message || String(err);
         console.error(
           `[lead-capture] Falha no grupo ${group.jid} (sessão ${sessionId}):`,
-          err?.message,
+          lastError,
         );
         counters.groups_failed += 1;
       }
@@ -422,13 +425,20 @@ async function runExtraction(sessionId: string) {
       });
     }
 
+    const hasFailures = counters.groups_failed > 0;
+    const allFailed =
+      hasFailures && counters.leads_inserted === 0 && counters.leads_updated === 0;
+
     await updateSession(sessionId, {
-      status: "completed",
+      status: allFailed ? "failed" : "completed",
       completed_at: new Date().toISOString(),
-      error: null,
+      error:
+        hasFailures && lastError
+          ? `${counters.groups_failed} grupo(s) com erro. Último: ${lastError}`
+          : null,
     });
     console.log(
-      `[lead-capture] Sessão ${sessionId} concluída: ${counters.leads_inserted} novos leads.`,
+      `[lead-capture] Sessão ${sessionId} finalizada com status ${allFailed ? "failed" : "completed"}: ${counters.leads_inserted} novos leads, ${counters.leads_updated} atualizados, ${counters.groups_failed} falhas.`,
     );
   } catch (err: any) {
     console.error(`[lead-capture] Erro na extração da sessão ${sessionId}:`, err?.message);
