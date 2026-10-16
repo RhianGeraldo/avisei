@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/app-layout";
@@ -12,6 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Download, Loader2, Users, Search } from "lucide-react";
@@ -25,6 +32,7 @@ import { useAuth } from "@/lib/auth-context";
 export default function ContactsPage() {
   const { companyId } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCollaborator, setSelectedCollaborator] = useState<string>("all");
 
   const { data: contacts = [], isLoading } = useQuery({
     queryKey: ["contacts", companyId],
@@ -68,8 +76,47 @@ export default function ContactsPage() {
     },
   });
 
+  const collaboratorsList = useMemo(() => {
+    const set = new Set<string>();
+    contacts.forEach((c: any) => {
+      if (Array.isArray(c.groups)) {
+        c.groups.forEach((g: any) => {
+          if (g.captured_by) set.add(g.captured_by);
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [contacts]);
+
+  const filteredContacts = useMemo(() => {
+    return contacts.filter((c: any) => {
+      const lower = searchTerm.toLowerCase();
+      const numberMatch = !searchTerm || c.number?.includes(lower);
+      const nameMatch = !searchTerm || c.name?.toLowerCase().includes(lower);
+      const unitMatch = !searchTerm || c.units?.name?.toLowerCase().includes(lower);
+      const groupMatch =
+        !searchTerm ||
+        (Array.isArray(c.groups) && c.groups.some((g: any) => g.name?.toLowerCase().includes(lower)));
+      const collaboratorTextMatch =
+        !searchTerm ||
+        (Array.isArray(c.groups) &&
+          c.groups.some((g: any) => g.captured_by?.toLowerCase().includes(lower)));
+
+      const matchesSearch =
+        numberMatch || nameMatch || unitMatch || groupMatch || collaboratorTextMatch;
+
+      const matchesCollaborator =
+        selectedCollaborator === "all" ||
+        (Array.isArray(c.groups) &&
+          c.groups.some((g: any) => g.captured_by === selectedCollaborator));
+
+      return matchesSearch && matchesCollaborator;
+    });
+  }, [contacts, searchTerm, selectedCollaborator]);
+
   const handleExportCSV = () => {
-    if (contacts.length === 0) {
+    const listToExport = filteredContacts.length > 0 ? filteredContacts : contacts;
+    if (listToExport.length === 0) {
       toast.error("Nenhum contato para exportar.");
       return;
     }
@@ -79,7 +126,7 @@ export default function ContactsPage() {
       const headers = ["ID", "Nome", "Numero", "Unidade", "Grupos Origem", "Colaboradora", "Data Importacao"];
       
       // Create rows
-      const rows = contacts.map(contact => {
+      const rows = listToExport.map((contact) => {
         const groups = Array.isArray(contact.groups) ? contact.groups : [];
         const groupNames = groups.map((g: any) => g.name || g.jid).join(" | ");
         const collaborators = Array.from(new Set(groups.map((g: any) => g.captured_by).filter(Boolean))).join(" | ");
@@ -108,22 +155,11 @@ export default function ContactsPage() {
       link.click();
       document.body.removeChild(link);
       
-      toast.success("Arquivo CSV exportado com sucesso!");
+      toast.success(`${listToExport.length} contatos exportados com sucesso!`);
     } catch (err: any) {
       toast.error("Erro ao gerar CSV: " + err.message);
     }
   };
-
-  const filteredContacts = contacts.filter((c: any) => {
-    if (!searchTerm) return true;
-    const lower = searchTerm.toLowerCase();
-    const numberMatch = c.number?.includes(lower);
-    const nameMatch = c.name?.toLowerCase().includes(lower);
-    const unitMatch = c.units?.name?.toLowerCase().includes(lower);
-    const groupMatch = Array.isArray(c.groups) && c.groups.some((g: any) => g.name?.toLowerCase().includes(lower));
-    const collaboratorMatch = Array.isArray(c.groups) && c.groups.some((g: any) => g.captured_by?.toLowerCase().includes(lower));
-    return numberMatch || nameMatch || unitMatch || groupMatch || collaboratorMatch;
-  });
 
   return (
     <AppLayout title="Base de Leads">
@@ -140,19 +176,34 @@ export default function ContactsPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-            <div className="relative w-full sm:w-80">
+            <div className="relative w-full sm:w-72">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar número, nome, unidade, grupo ou colaboradora..."
+                placeholder="Buscar número, nome, grupo..."
                 className="pl-9 bg-background"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            {collaboratorsList.length > 0 && (
+              <Select value={selectedCollaborator} onValueChange={setSelectedCollaborator}>
+                <SelectTrigger className="w-full sm:w-48 bg-background">
+                  <SelectValue placeholder="Colaboradora" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas colaboradoras</SelectItem>
+                  {collaboratorsList.map((collab) => (
+                    <SelectItem key={collab} value={collab}>
+                      {collab}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button 
               onClick={handleExportCSV}
-              disabled={isLoading || contacts.length === 0}
-              className="w-full sm:w-auto"
+              disabled={isLoading || filteredContacts.length === 0}
+              className="w-full sm:w-auto shrink-0"
             >
               <Download className="h-4 w-4 mr-2" />
               Exportar CSV

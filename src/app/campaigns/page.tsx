@@ -94,6 +94,7 @@ export default function CampaignsPage() {
   const [leadsSearch, setLeadsSearch] = useState("");
   const [leadsUnitFilter, setLeadsUnitFilter] = useState("all");
   const [leadsGroupFilter, setLeadsGroupFilter] = useState("all");
+  const [leadsCollaboratorFilter, setLeadsCollaboratorFilter] = useState("all");
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   
   const { data: campaigns = [], isLoading } = useQuery({
@@ -186,19 +187,42 @@ export default function CampaignsPage() {
     return Array.from(set);
   }, [allLeads]);
 
+  // Colaboradoras únicas da base de leads (para filtro)
+  const leadsCollaborators = useMemo(() => {
+    const set = new Set<string>();
+    allLeads.forEach((l: any) => {
+      if (Array.isArray(l.groups)) {
+        l.groups.forEach((g: any) => {
+          if (g.captured_by) set.add(g.captured_by);
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [allLeads]);
+
   // Filtro aplicado
   const filteredLeads = useMemo(() => {
     return allLeads.filter((l: any) => {
       const searchLower = leadsSearch.toLowerCase();
-      const matchSearch = !leadsSearch ||
+      const matchSearch =
+        !leadsSearch ||
         l.number?.includes(leadsSearch) ||
-        l.name?.toLowerCase().includes(searchLower);
+        l.name?.toLowerCase().includes(searchLower) ||
+        (Array.isArray(l.groups) &&
+          l.groups.some((g: any) => g.captured_by?.toLowerCase().includes(searchLower)));
+
       const matchUnit = leadsUnitFilter === "all" || l.units?.id === leadsUnitFilter;
-      const matchGroup = leadsGroupFilter === "all" ||
+      const matchGroup =
+        leadsGroupFilter === "all" ||
         (Array.isArray(l.groups) && l.groups.some((g: any) => g.name === leadsGroupFilter));
-      return matchSearch && matchUnit && matchGroup;
+      const matchCollaborator =
+        leadsCollaboratorFilter === "all" ||
+        (Array.isArray(l.groups) &&
+          l.groups.some((g: any) => g.captured_by === leadsCollaboratorFilter));
+
+      return matchSearch && matchUnit && matchGroup && matchCollaborator;
     });
-  }, [allLeads, leadsSearch, leadsUnitFilter, leadsGroupFilter]);
+  }, [allLeads, leadsSearch, leadsUnitFilter, leadsGroupFilter, leadsCollaboratorFilter]);
 
   const handleConfirmLeadsImport = () => {
     const toAdd = filteredLeads
@@ -216,6 +240,7 @@ export default function CampaignsPage() {
     setLeadsSearch("");
     setLeadsUnitFilter("all");
     setLeadsGroupFilter("all");
+    setLeadsCollaboratorFilter("all");
   };
 
   const toggleLeadSelection = (id: string) => {
@@ -851,12 +876,23 @@ export default function CampaignsPage() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Buscar número ou nome..."
+                placeholder="Buscar número, nome ou colaboradora..."
                 className="pl-8 h-8 text-sm bg-background"
                 value={leadsSearch}
                 onChange={e => setLeadsSearch(e.target.value)}
               />
             </div>
+            {leadsCollaborators.length > 0 && (
+              <Select value={leadsCollaboratorFilter} onValueChange={setLeadsCollaboratorFilter}>
+                <SelectTrigger className="h-8 text-xs w-44">
+                  <SelectValue placeholder="Colaboradora" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas colaboradoras</SelectItem>
+                  {leadsCollaborators.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={leadsUnitFilter} onValueChange={setLeadsUnitFilter}>
               <SelectTrigger className="h-8 text-xs w-40">
                 <SelectValue placeholder="Unidade" />
@@ -902,6 +938,7 @@ export default function CampaignsPage() {
                     <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Número</th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Nome</th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Unidade</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Colaboradora</th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Grupo</th>
                   </tr>
                 </thead>
@@ -909,6 +946,9 @@ export default function CampaignsPage() {
                   {filteredLeads.map((lead: any) => {
                     const isSelected = selectedLeadIds.has(lead.id);
                     const groupName = Array.isArray(lead.groups) && lead.groups[0]?.name;
+                    const collaborator = Array.isArray(lead.groups)
+                      ? Array.from(new Set(lead.groups.map((g: any) => g.captured_by).filter(Boolean))).join(", ")
+                      : "";
                     return (
                       <tr
                         key={lead.id}
@@ -929,6 +969,9 @@ export default function CampaignsPage() {
                           {lead.units?.name && (
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0">{lead.units.name}</Badge>
                           )}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                          {collaborator || "—"}
                         </td>
                         <td className="px-3 py-2.5">
                           {groupName && (
