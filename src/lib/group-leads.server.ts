@@ -8,6 +8,8 @@ export type GroupOrigin = {
   imported_at: string;
   source: "manual" | "capture_link";
   captured_by?: string;
+  unit_id?: string | null;
+  unit_name?: string | null;
   capture_session_id?: string;
 };
 

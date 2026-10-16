@@ -15,19 +15,23 @@ export async function getCaptureLinkInfo({ token }: { token: string }) {
     valid: true as const,
     linkName: link.name as string,
     companyName: (link.companies?.name as string) ?? "",
+    unitId: (link.unit_id as string) ?? null,
     unitName: (link.units?.name as string) ?? null,
+    units: ((link.companyUnits ?? []) as { id: string; name: string }[]),
   };
 }
 
 export async function startCaptureSession({
   token,
   personName,
+  unitId,
 }: {
   token: string;
   personName: string;
+  unitId?: string | null;
 }): Promise<{ ok: true; session: CaptureSessionView } | { ok: false; error: string }> {
   try {
-    return { ok: true, session: await startSession(token, personName) };
+    return { ok: true, session: await startSession(token, personName, unitId) };
   } catch (err: any) {
     console.error("[lead-capture] startCaptureSession:", err?.message);
     return { ok: false, error: err?.message || "Não foi possível iniciar a conexão." };

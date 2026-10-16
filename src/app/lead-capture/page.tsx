@@ -102,7 +102,7 @@ export default function LeadCapturePage() {
       const { data, error } = await supabase
         .from("lead_capture_sessions")
         .select(
-          "id, link_id, person_name, status, groups_total, groups_done, groups_failed, leads_inserted, leads_updated, skipped_without_phone, error, created_at",
+          "id, link_id, unit_id, person_name, status, groups_total, groups_done, groups_failed, leads_inserted, leads_updated, skipped_without_phone, error, created_at, units(name)",
         )
         .order("created_at", { ascending: false })
         .limit(50);
@@ -259,7 +259,8 @@ export default function LeadCapturePage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Pessoa</TableHead>
+                  <TableHead>Colaboradora</TableHead>
+                  <TableHead>Unidade</TableHead>
                   <TableHead>Link</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Grupos</TableHead>
@@ -271,7 +272,7 @@ export default function LeadCapturePage() {
               <TableBody>
                 {sessions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
                       Nenhuma captura realizada ainda.
                     </TableCell>
                   </TableRow>
@@ -281,6 +282,13 @@ export default function LeadCapturePage() {
                     return (
                       <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.person_name}</TableCell>
+                        <TableCell>
+                          {s.units?.name ? (
+                            <Badge variant="outline">{s.units.name}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">Geral</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
                           {linkName(s.link_id)}
                         </TableCell>

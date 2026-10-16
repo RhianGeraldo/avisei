@@ -76,12 +76,13 @@ export default function ContactsPage() {
 
     try {
       // Create CSV Headers
-      const headers = ["ID", "Nome", "Numero", "Unidade", "Grupos Origem", "Data Importacao"];
+      const headers = ["ID", "Nome", "Numero", "Unidade", "Grupos Origem", "Colaboradora", "Data Importacao"];
       
       // Create rows
       const rows = contacts.map(contact => {
         const groups = Array.isArray(contact.groups) ? contact.groups : [];
         const groupNames = groups.map((g: any) => g.name || g.jid).join(" | ");
+        const collaborators = Array.from(new Set(groups.map((g: any) => g.captured_by).filter(Boolean))).join(" | ");
         const createdDate = contact.created_at ? format(new Date(contact.created_at), "dd/MM/yyyy HH:mm") : "";
         const unitName = contact.units?.name || "Sem unidade";
         
@@ -91,6 +92,7 @@ export default function ContactsPage() {
           contact.number || "",
           `"${unitName}"`,
           `"${groupNames}"`, // wrap in quotes to avoid comma issues
+          `"${collaborators}"`,
           createdDate
         ].join(",");
       });
@@ -119,7 +121,8 @@ export default function ContactsPage() {
     const nameMatch = c.name?.toLowerCase().includes(lower);
     const unitMatch = c.units?.name?.toLowerCase().includes(lower);
     const groupMatch = Array.isArray(c.groups) && c.groups.some((g: any) => g.name?.toLowerCase().includes(lower));
-    return numberMatch || nameMatch || unitMatch || groupMatch;
+    const collaboratorMatch = Array.isArray(c.groups) && c.groups.some((g: any) => g.captured_by?.toLowerCase().includes(lower));
+    return numberMatch || nameMatch || unitMatch || groupMatch || collaboratorMatch;
   });
 
   return (
@@ -140,7 +143,7 @@ export default function ContactsPage() {
             <div className="relative w-full sm:w-80">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar número, nome, unidade ou grupo..."
+                placeholder="Buscar número, nome, unidade, grupo ou colaboradora..."
                 className="pl-9 bg-background"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -166,54 +169,74 @@ export default function ContactsPage() {
                   <TableHead className="h-10">Nome</TableHead>
                   <TableHead className="h-10">Unidade</TableHead>
                   <TableHead className="h-10">Grupos de Origem</TableHead>
+                  <TableHead className="h-10">Colaboradora</TableHead>
                   <TableHead className="h-10">Importado em</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-16">
+                    <TableCell colSpan={6} className="text-center py-16">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
                     </TableCell>
                   </TableRow>
                 ) : filteredContacts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-16">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-16">
                       <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                       <p>Nenhum contato encontrado.</p>
                       {searchTerm && <p className="text-sm">Sua busca não retornou resultados.</p>}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredContacts.map((contact: any) => (
-                    <TableRow key={contact.id} className="hover:bg-muted/20">
-                      <TableCell className="font-mono font-medium">{contact.number}</TableCell>
-                      <TableCell>{contact.name || ""}</TableCell>
-                      <TableCell>
-                        {contact.units?.name ? (
-                          <Badge variant="outline">{contact.units.name}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">Sem unidade</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {Array.isArray(contact.groups) && contact.groups.length > 0 ? (
-                            contact.groups.map((g: any, idx: number) => (
-                              <Badge key={idx} variant="secondary" className="text-xs max-w-48 truncate" title={g.name || g.jid}>
-                                {g.name || "Grupo"}
-                              </Badge>
-                            ))
+                  filteredContacts.map((contact: any) => {
+                    const collaborators = Array.isArray(contact.groups)
+                      ? Array.from(new Set(contact.groups.map((g: any) => g.captured_by).filter(Boolean)))
+                      : [];
+
+                    return (
+                      <TableRow key={contact.id} className="hover:bg-muted/20">
+                        <TableCell className="font-mono font-medium">{contact.number}</TableCell>
+                        <TableCell>{contact.name || ""}</TableCell>
+                        <TableCell>
+                          {contact.units?.name ? (
+                            <Badge variant="outline">{contact.units.name}</Badge>
                           ) : (
-                            <span className="text-muted-foreground text-xs">Sem grupo</span>
+                            <span className="text-muted-foreground text-xs">Sem unidade</span>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {contact.created_at ? format(new Date(contact.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {Array.isArray(contact.groups) && contact.groups.length > 0 ? (
+                              contact.groups.map((g: any, idx: number) => (
+                                <Badge key={idx} variant="secondary" className="text-xs max-w-48 truncate" title={g.name || g.jid}>
+                                  {g.name || "Grupo"}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-muted-foreground text-xs">Sem grupo</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {collaborators.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {collaborators.map((c: any, idx: number) => (
+                                <Badge key={idx} variant="outline" className="text-xs bg-muted/40 font-normal">
+                                  {c}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {contact.created_at ? format(new Date(contact.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </table>

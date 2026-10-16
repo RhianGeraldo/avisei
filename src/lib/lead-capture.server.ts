@@ -84,7 +84,19 @@ export async function loadLinkByToken(token: string) {
     .select("id, company_id, unit_id, name, active, companies(name), units(name)")
     .eq("token", token)
     .maybeSingle();
-  return data ?? null;
+  if (!data) return null;
+
+  // Busca as unidades ativas da empresa
+  const { data: units } = await supabaseAdmin
+    .from("units")
+    .select("id, name")
+    .eq("company_id", data.company_id)
+    .order("name");
+
+  return {
+    ...data,
+    companyUnits: (units as { id: string; name: string }[]) ?? [],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,16 +106,25 @@ export async function loadLinkByToken(token: string) {
 export async function startSession(
   token: string,
   rawPersonName: string,
+  chosenUnitId?: string | null,
 ): Promise<CaptureSessionView> {
   const personName = String(rawPersonName ?? "")
     .trim()
     .replace(/\s+/g, " ");
   if (personName.length < 2 || personName.length > 80) {
-    throw new Error("Informe seu nome (entre 2 e 80 caracteres).");
+    throw new Error("Informe o nome da colaboradora (entre 2 e 80 caracteres).");
   }
 
   const link = await loadLinkByToken(token);
   if (!link || !link.active) throw new Error("Link inválido ou desativado.");
+
+  // Se o link já tiver uma unidade definida, usa ela.
+  // Se não tiver (link geral), usa a unidade escolhida pela colaboradora se for válida para a empresa.
+  let effectiveUnitId = link.unit_id;
+  if (!effectiveUnitId && chosenUnitId) {
+    const isValid = link.companyUnits.some((u: { id: string; name: string }) => u.id === chosenUnitId);
+    if (isValid) effectiveUnitId = chosenUnitId;
+  }
 
   const { count } = await supabaseAdmin
     .from("lead_capture_sessions")
@@ -120,7 +141,7 @@ export async function startSession(
   const suffix = crypto.randomUUID().slice(0, 6);
   const instance = await createEvogoInstance({
     data: {
-      unitId: link.unit_id,
+      unitId: effectiveUnitId,
       companyId: link.company_id,
       name: `Captura ${personName} ${suffix}`,
     },
@@ -131,7 +152,7 @@ export async function startSession(
     .insert({
       link_id: link.id,
       company_id: link.company_id,
-      unit_id: link.unit_id,
+      unit_id: effectiveUnitId,
       person_name: personName,
       instance_id: instance.id,
       status: "awaiting_connection",
@@ -318,6 +339,15 @@ async function runExtraction(sessionId: string) {
     if (!instanceId) throw new Error("Instância não encontrada.");
 
     const ownNumber = await detectOwnNumber(instanceId);
+    let unitName: string | null = null;
+    if (session.unit_id) {
+      const { data: u } = await supabaseAdmin
+        .from("units")
+        .select("name")
+        .eq("id", session.unit_id)
+        .maybeSingle();
+      unitName = u?.name ?? null;
+    }
     const rawGroups = await withRetry(() => fetchEvogoGroups({ data: { instanceId } }));
     const groups = normalizeGroupList(rawGroups);
 
@@ -365,6 +395,8 @@ async function runExtraction(sessionId: string) {
             imported_at: new Date().toISOString(),
             source: "capture_link",
             captured_by: session.person_name,
+            unit_id: session.unit_id,
+            unit_name: unitName,
             capture_session_id: sessionId,
           },
         });

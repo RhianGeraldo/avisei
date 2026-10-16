@@ -7,7 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, Loader2, MessageSquareMore, QrCode, RefreshCw, XCircle } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CheckCircle2,
+  Loader2,
+  MessageSquareMore,
+  QrCode,
+  RefreshCw,
+  Store,
+  User,
+  XCircle,
+} from "lucide-react";
 import {
   getCaptureLinkInfo,
   getCaptureSessionStatus,
@@ -25,6 +41,7 @@ export default function ConnectPage() {
 
   const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
   const [personName, setPersonName] = useState("");
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<CaptureSessionView | null>(null);
@@ -34,6 +51,13 @@ export default function ConnectPage() {
   useEffect(() => {
     getCaptureLinkInfo({ token }).then(async (info) => {
       setLinkInfo(info);
+      if (info.valid) {
+        if (info.unitId) {
+          setSelectedUnitId(info.unitId);
+        } else if (info.units && info.units.length === 1) {
+          setSelectedUnitId(info.units[0].id);
+        }
+      }
       const savedId = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
       if (info.valid && savedId) {
         const res = await getCaptureSessionStatus({ token, sessionId: savedId });
@@ -63,9 +87,26 @@ export default function ConnectPage() {
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const trimmedName = personName.trim();
+    if (!trimmedName) {
+      setError("Por favor, informe seu nome.");
+      return;
+    }
+
+    const effectiveUnitId = selectedUnitId || (linkInfo?.valid ? linkInfo.unitId : null);
+    if (!effectiveUnitId && linkInfo?.valid && linkInfo.units && linkInfo.units.length > 0) {
+      setError("Por favor, selecione a sua unidade.");
+      return;
+    }
+
     setStarting(true);
     lastQr.current = null;
-    const res = await startCaptureSession({ token, personName });
+    const res = await startCaptureSession({
+      token,
+      personName: trimmedName,
+      unitId: effectiveUnitId || undefined,
+    });
     setStarting(false);
     if (!res.ok) {
       setError(res.error);
@@ -82,6 +123,13 @@ export default function ConnectPage() {
     setError(null);
   };
 
+  const resolvedUnitName =
+    linkInfo?.valid && linkInfo.unitName
+      ? linkInfo.unitName
+      : linkInfo?.valid && linkInfo.units
+        ? linkInfo.units.find((u) => u.id === selectedUnitId)?.name || null
+        : null;
+
   return (
     <div className="min-h-screen grid place-items-center p-4">
       <Card className="w-full max-w-md glass">
@@ -91,9 +139,14 @@ export default function ConnectPage() {
           </div>
           <CardTitle className="font-display text-2xl">Conectar WhatsApp</CardTitle>
           {linkInfo?.valid && (
-            <CardDescription>
-              {linkInfo.companyName}
-              {linkInfo.unitName ? ` · ${linkInfo.unitName}` : ""}
+            <CardDescription className="flex items-center justify-center gap-1.5 flex-wrap">
+              <span>{linkInfo.companyName}</span>
+              {resolvedUnitName && (
+                <>
+                  <span>·</span>
+                  <span className="font-medium text-foreground">{resolvedUnitName}</span>
+                </>
+              )}
             </CardDescription>
           )}
         </CardHeader>
@@ -112,7 +165,10 @@ export default function ConnectPage() {
           ) : !session ? (
             <form onSubmit={handleStart} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Seu nome</Label>
+                <Label htmlFor="name" className="flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  Nome da Colaboradora
+                </Label>
                 <Input
                   id="name"
                   required
@@ -123,7 +179,40 @@ export default function ConnectPage() {
                   onChange={(e) => setPersonName(e.target.value)}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="unit" className="flex items-center gap-1.5">
+                  <Store className="h-4 w-4 text-muted-foreground" />
+                  Unidade
+                </Label>
+                {linkInfo.unitName ? (
+                  <div className="flex items-center gap-2 p-2.5 rounded-md border border-border bg-muted/40 text-sm">
+                    <Store className="h-4 w-4 text-primary" />
+                    <span className="font-medium">{linkInfo.unitName}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">(Fixada no link)</span>
+                  </div>
+                ) : linkInfo.units && linkInfo.units.length > 0 ? (
+                  <Select value={selectedUnitId} onValueChange={setSelectedUnitId} required>
+                    <SelectTrigger id="unit">
+                      <SelectValue placeholder="Selecione sua unidade..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {linkInfo.units.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-2.5 rounded-md border border-border bg-muted/40 text-sm text-muted-foreground">
+                    Geral (empresa)
+                  </div>
+                )}
+              </div>
+
               {error && <p className="text-sm text-destructive">{error}</p>}
+
               <Button type="submit" className="w-full" disabled={starting}>
                 {starting ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -135,6 +224,11 @@ export default function ConnectPage() {
             </form>
           ) : session.status === "awaiting_connection" ? (
             <div className="space-y-4 text-center">
+              <div className="text-xs text-muted-foreground bg-muted/30 py-1.5 px-3 rounded-lg border border-border/50 inline-block mx-auto">
+                <span className="font-semibold text-foreground">{personName || "Colaboradora"}</span>
+                {resolvedUnitName ? ` · ${resolvedUnitName}` : ""}
+              </div>
+
               <div className="mx-auto grid h-64 w-64 place-items-center rounded-xl bg-white p-3">
                 {session.qrBase64 ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -162,14 +256,22 @@ export default function ConnectPage() {
               </p>
             </div>
           ) : session.status === "extracting" ? (
-            <ExtractingView session={session} />
+            <ExtractingView
+              session={session}
+              personName={personName}
+              unitName={resolvedUnitName}
+            />
           ) : session.status === "completed" ? (
             <div className="space-y-4">
               <StatusMessage
                 icon="success"
                 title="Tudo pronto!"
-                text="Seus grupos foram processados e seu WhatsApp já foi desconectado deste sistema."
+                text="Seus grupos foram processados e seu WhatsApp já foi desconectado deste sistema com segurança."
               />
+              <div className="text-xs text-center text-muted-foreground">
+                Leads vinculados a: <strong>{personName || "Colaboradora"}</strong>
+                {resolvedUnitName ? ` (${resolvedUnitName})` : ""}
+              </div>
               <Summary session={session} />
             </div>
           ) : (
@@ -192,7 +294,15 @@ export default function ConnectPage() {
   );
 }
 
-function ExtractingView({ session }: { session: CaptureSessionView }) {
+function ExtractingView({
+  session,
+  personName,
+  unitName,
+}: {
+  session: CaptureSessionView;
+  personName?: string;
+  unitName?: string | null;
+}) {
   const pct =
     session.groupsTotal > 0 ? Math.round((session.groupsDone / session.groupsTotal) * 100) : 0;
   return (
@@ -201,6 +311,14 @@ function ExtractingView({ session }: { session: CaptureSessionView }) {
         <CheckCircle2 className="h-5 w-5" />
         <span className="font-medium">WhatsApp conectado</span>
       </div>
+
+      {(personName || unitName) && (
+        <div className="text-xs text-muted-foreground bg-muted/40 py-1 px-3 rounded-md border border-border/50 inline-block">
+          Colaboradora: <strong>{personName || "—"}</strong>
+          {unitName ? ` · Unidade: ${unitName}` : ""}
+        </div>
+      )}
+
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">
           {session.groupsTotal === 0
