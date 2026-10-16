@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Loader2,
   MessageSquareMore,
+  Plus,
   QrCode,
   RefreshCw,
   Store,
@@ -47,7 +48,7 @@ export default function ConnectPage() {
   const [session, setSession] = useState<CaptureSessionView | null>(null);
   const lastQr = useRef<string | null>(null);
 
-  // Carrega dados do link e retoma sessão salva (caso a pessoa recarregue a página)
+  // Carrega dados do link e retoma sessão salva apenas se estiver ativa (aguardando QR ou extraindo)
   useEffect(() => {
     getCaptureLinkInfo({ token }).then(async (info) => {
       setLinkInfo(info);
@@ -61,8 +62,16 @@ export default function ConnectPage() {
       const savedId = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
       if (info.valid && savedId) {
         const res = await getCaptureSessionStatus({ token, sessionId: savedId });
-        if (res.ok) setSession(res.session);
-        else localStorage.removeItem(storageKey);
+        if (res.ok) {
+          if (res.session.status === "awaiting_connection" || res.session.status === "extracting") {
+            setSession(res.session);
+          } else {
+            // Sessão concluída ou expirada: limpa do localStorage para permitir nova conexão com o mesmo link
+            localStorage.removeItem(storageKey);
+          }
+        } else {
+          localStorage.removeItem(storageKey);
+        }
       }
     });
   }, [token, storageKey]);
@@ -121,6 +130,7 @@ export default function ConnectPage() {
     lastQr.current = null;
     setSession(null);
     setError(null);
+    setPersonName("");
   };
 
   const resolvedUnitName =
@@ -254,6 +264,16 @@ export default function ConnectPage() {
               <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" /> Aguardando leitura...
               </p>
+              <div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={reset}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Cancelar e voltar
+                </Button>
+              </div>
             </div>
           ) : session.status === "extracting" ? (
             <ExtractingView
@@ -278,6 +298,11 @@ export default function ConnectPage() {
                   Aviso: {session.error}
                 </p>
               )}
+              <div className="pt-2">
+                <Button className="w-full" size="lg" onClick={reset}>
+                  <Plus className="h-4 w-4 mr-2" /> Conectar outro WhatsApp
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
