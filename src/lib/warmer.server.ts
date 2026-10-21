@@ -100,25 +100,48 @@ async function evogoRequest(
 // 2. Gerenciamento de Números / Instâncias do Aquecedor
 // =====================================================================
 
-async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
+async function fetchChipProfile(
+  evogoInstanceId: string,
+  evogoApiKey: string,
+  hintStatusName?: string | null
+) {
   let phone: string | null = null;
-  let profileName: string | null = null;
+  let profileName: string | null =
+    hintStatusName && typeof hintStatusName === "string" && !hintStatusName.startsWith("warmer-")
+      ? hintStatusName.trim()
+      : null;
   let profilePicUrl: string | null = null;
 
+  // 1. Se ainda não temos o nome real do perfil, checa /instance/status primeiro (o whatsmeow retorna o pushName em data.Name)
+  if (!profileName) {
+    try {
+      const statusRes = await evogoRequest("/instance/status", {
+        method: "GET",
+        apiKey: evogoApiKey,
+        timeoutMs: 4000,
+      });
+      const sName = statusRes?.data?.Name || statusRes?.Name;
+      if (sName && typeof sName === "string" && !sName.startsWith("warmer-")) {
+        profileName = sName.trim();
+      }
+    } catch {
+      // Ignora erro de status
+    }
+  }
+
+  // 2. Busca JID e configurações no /instance/info
   try {
-    // 1. Tenta com adminToken (padrão global de gerenciamento do EvoGo)
-    // Se falhar, tenta com a apiKey da instância
     let infoRes: any;
     try {
       infoRes = await evogoRequest(`/instance/info/${evogoInstanceId}`, {
         method: "GET",
-        timeoutMs: 8000,
+        timeoutMs: 5000,
       });
     } catch {
       infoRes = await evogoRequest(`/instance/info/${evogoInstanceId}`, {
         method: "GET",
         apiKey: evogoApiKey,
-        timeoutMs: 8000,
+        timeoutMs: 5000,
       });
     }
 
@@ -130,54 +153,43 @@ async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
     if (!phone && (inst?.phone || inst?.Phone)) {
       phone = String(inst.phone || inst.Phone).replace(/\D/g, "");
     }
-    profileName = inst?.profileName || inst?.pushName || inst?.name || inst?.Name || null;
-    profilePicUrl =
-      inst?.profilePicUrl ||
-      inst?.profilePictureUrl ||
-      inst?.avatar ||
-      inst?.picture ||
-      null;
+
+    // Se ainda não temos profileName, verifica profileName ou pushName (NUNCA inst.name pois é o nome técnico da instância)
+    if (!profileName) {
+      const pName = inst?.profileName || inst?.pushName || inst?.notify || null;
+      if (pName && typeof pName === "string" && !pName.startsWith("warmer-")) {
+        profileName = pName.trim();
+      }
+    }
+
+    const rawPic = inst?.profilePicUrl || inst?.profilePictureUrl || inst?.avatar || inst?.picture || null;
+    if (rawPic && typeof rawPic === "string" && rawPic.startsWith("http")) {
+      profilePicUrl = rawPic;
+    }
   } catch (err) {
     console.warn("[warmer] Erro ao buscar /instance/info:", err);
   }
 
+  // 3. Busca foto de perfil via /user/avatar com { number: `${phone}@s.whatsapp.net`, preview: true }
   if (phone && !profilePicUrl) {
     try {
+      const jidTarget = phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
       const avatarRes = await evogoRequest("/user/avatar", {
         method: "POST",
         apiKey: evogoApiKey,
-        body: { number: phone, preview: false },
-        timeoutMs: 6000,
+        body: { number: jidTarget, preview: true },
+        timeoutMs: 4000,
       });
       const url =
-        avatarRes?.url ||
         avatarRes?.data?.url ||
-        avatarRes?.profilePicUrl ||
+        avatarRes?.url ||
         avatarRes?.data?.profilePictureUrl ||
-        avatarRes?.picture ||
-        avatarRes?.avatar;
+        avatarRes?.profilePicUrl;
       if (url && typeof url === "string" && url.startsWith("http")) {
         profilePicUrl = url;
       }
     } catch (e) {
       // Ignora erro de avatar
-    }
-  }
-
-  if (phone && !profileName) {
-    try {
-      const userRes = await evogoRequest("/user/info", {
-        method: "POST",
-        apiKey: evogoApiKey,
-        body: { number: [phone], numbers: [phone] },
-        timeoutMs: 6000,
-      });
-      const first = Array.isArray(userRes?.data) ? userRes.data[0] : Array.isArray(userRes) ? userRes[0] : userRes;
-      if (first?.name || first?.pushName || first?.notify) {
-        profileName = first.name || first.pushName || first.notify;
-      }
-    } catch (e) {
-      // Ignora erro de user/info
     }
   }
 
@@ -285,10 +297,14 @@ export async function getWarmerNumberQr(numberId: string): Promise<{
 
     if (isConnected) {
       const target = num.evogo_instance_id || num.evogo_instance_name;
-      const profile = await fetchChipProfile(target, num.evogo_api_key);
+      const statusName = statusRes?.data?.Name || statusRes?.Name || null;
+      const profile = await fetchChipProfile(target, num.evogo_api_key, statusName);
 
       const phone = profile.phone || num.phone_number;
-      const profileName = profile.profileName || num.profile_name;
+      const profileName =
+        profile.profileName ||
+        (statusName && !statusName.startsWith("warmer-") ? statusName : null) ||
+        (num.profile_name && !num.profile_name.startsWith("warmer-") ? num.profile_name : null);
       const pic = profile.profilePicUrl || num.profile_picture_url;
 
       await supabaseAdmin
@@ -355,8 +371,18 @@ export async function refreshChipProfile(numberId: string) {
 
   if (error || !num) throw new Error("Número de aquecimento não encontrado.");
 
+  let statusName: string | null = null;
+  try {
+    const sRes = await evogoRequest("/instance/status", {
+      method: "GET",
+      apiKey: num.evogo_api_key,
+      timeoutMs: 4000,
+    });
+    statusName = sRes?.data?.Name || sRes?.Name || null;
+  } catch {}
+
   const target = num.evogo_instance_id || num.evogo_instance_name;
-  const profile = await fetchChipProfile(target, num.evogo_api_key);
+  const profile = await fetchChipProfile(target, num.evogo_api_key, statusName);
 
   const updates: Record<string, any> = {
     updated_at: new Date().toISOString(),
