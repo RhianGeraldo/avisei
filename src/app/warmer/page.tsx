@@ -61,9 +61,36 @@ import {
 } from "./actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+async function resolveCompanyId(authCompanyId: string | null): Promise<string> {
+  if (authCompanyId) return authCompanyId;
+  const { data: existing } = await supabase
+    .from("companies")
+    .select("id")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+  const { data: created, error } = await supabase
+    .from("companies")
+    .insert({ name: "Empresa Principal" })
+    .select("id")
+    .single();
+  if (error) throw new Error(`Falha ao identificar empresa: ${error.message}`);
+  return created.id;
+}
+
 export default function WarmerPage() {
   const { companyId } = useAuth();
   const qc = useQueryClient();
+
+  // Garante identificação da empresa mesmo para super admin ou quando companyId estiver em carregamento
+  const { data: effectiveCompanyId } = useQuery({
+    queryKey: ["effective-company-id", companyId],
+    queryFn: () => resolveCompanyId(companyId),
+    staleTime: 60000,
+  });
+
+  const activeCompanyId = effectiveCompanyId || companyId || undefined;
 
   // Estados de modais e ações
   const [connectModalOpen, setConnectModalOpen] = useState(false);
@@ -84,13 +111,13 @@ export default function WarmerPage() {
 
   // 1. Busca lista de chips de aquecimento da empresa
   const { data: chips = [], isLoading: loadingChips } = useQuery({
-    queryKey: ["warmer-numbers", companyId],
+    queryKey: ["warmer-numbers", activeCompanyId],
     queryFn: async () => {
       let query = supabase
         .from("warmer_numbers")
         .select("*")
         .order("created_at", { ascending: false });
-      if (companyId) query = query.eq("company_id", companyId);
+      if (activeCompanyId) query = query.eq("company_id", activeCompanyId);
       const { data, error } = await query;
       if (error) {
         console.warn("Tabelas de aquecimento ainda não inicializadas:", error.message);
@@ -103,10 +130,10 @@ export default function WarmerPage() {
 
   // 2. Busca grupos de aquecimento da empresa
   const { data: groups = [] } = useQuery({
-    queryKey: ["warmer-groups", companyId],
+    queryKey: ["warmer-groups", activeCompanyId],
     queryFn: async () => {
       let query = supabase.from("warmer_groups").select("*").order("created_at", { ascending: false });
-      if (companyId) query = query.eq("company_id", companyId);
+      if (activeCompanyId) query = query.eq("company_id", activeCompanyId);
       const { data, error } = await query;
       if (error) return [];
       return data ?? [];
@@ -116,14 +143,14 @@ export default function WarmerPage() {
 
   // 3. Busca últimas mensagens trocadas no aquecedor
   const { data: messages = [] } = useQuery({
-    queryKey: ["warmer-messages", companyId],
+    queryKey: ["warmer-messages", activeCompanyId],
     queryFn: async () => {
       let query = supabase
         .from("warmer_messages")
         .select("*, from_num:from_number_id(name), to_num:to_number_id(name)")
         .order("created_at", { ascending: false })
         .limit(30);
-      if (companyId) query = query.eq("company_id", companyId);
+      if (activeCompanyId) query = query.eq("company_id", activeCompanyId);
       const { data, error } = await query;
       if (error) return [];
       return data ?? [];
@@ -167,14 +194,15 @@ export default function WarmerPage() {
       toast.error("Informe um nome para identificar o chip.");
       return;
     }
-    if (!companyId) {
-      toast.error("Empresa não identificada.");
-      return;
-    }
 
     setCreatingChip(true);
+    let targetCompanyId = activeCompanyId;
+    if (!targetCompanyId) {
+      targetCompanyId = await resolveCompanyId(companyId).catch(() => undefined);
+    }
+
     const res = await createNumberAction({
-      companyId,
+      companyId: targetCompanyId,
       name: newChipName.trim(),
     });
     setCreatingChip(false);

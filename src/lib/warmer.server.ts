@@ -184,12 +184,38 @@ async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
   return { phone, profileName, profilePicUrl };
 }
 
-export async function createWarmerNumber(companyId: string, name: string) {
+export async function createWarmerNumber(companyId?: string | null, name: string = "") {
   const cleanName = name.trim();
   if (!cleanName) throw new Error("Informe um nome para identificar o chip.");
 
+  let targetCompanyId = companyId?.trim() || null;
+  if (!targetCompanyId) {
+    const { data: firstCompany } = await supabaseAdmin
+      .from("companies")
+      .select("id")
+      .order("created_at")
+      .limit(1)
+      .maybeSingle();
+
+    if (firstCompany?.id) {
+      targetCompanyId = firstCompany.id;
+    } else {
+      const { data: createdComp, error: compErr } = await supabaseAdmin
+        .from("companies")
+        .insert({ name: "Empresa Principal" })
+        .select("id")
+        .single();
+      if (compErr || !createdComp) throw new Error("Nenhuma empresa cadastrada no sistema.");
+      targetCompanyId = createdComp.id;
+    }
+  }
+
+  if (!targetCompanyId) {
+    throw new Error("Nenhuma empresa cadastrada no sistema.");
+  }
+
   const randomHash = Math.random().toString(36).substring(2, 8);
-  const instanceName = `warmer-${companyId.slice(0, 8)}-${randomHash}`;
+  const instanceName = `warmer-${targetCompanyId.slice(0, 8)}-${randomHash}`;
   const instanceToken = crypto.randomUUID().replace(/-/g, "");
 
   // 1. Cria a instância no EvoGo
@@ -204,7 +230,7 @@ export async function createWarmerNumber(companyId: string, name: string) {
   const { data: row, error } = await supabaseAdmin
     .from("warmer_numbers")
     .insert({
-      company_id: companyId,
+      company_id: targetCompanyId,
       name: cleanName,
       evogo_instance_name: instanceName,
       evogo_instance_id: evogoInstanceId,

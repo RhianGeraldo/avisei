@@ -33,7 +33,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from("profiles").select("company_id").eq("id", uid).maybeSingle(),
     ]);
     setRoles(rolesRes.data?.map((r) => r.role as AppRole) ?? []);
-    setCompanyId(profileRes.data?.company_id ?? null);
+
+    let cid = profileRes.data?.company_id ?? null;
+    if (!cid) {
+      const { data: firstCompany } = await supabase
+        .from("companies")
+        .select("id")
+        .order("created_at")
+        .limit(1)
+        .maybeSingle();
+      if (firstCompany?.id) {
+        cid = firstCompany.id;
+        supabase.from("profiles").update({ company_id: cid }).eq("id", uid).then(() => {});
+      }
+    }
+    setCompanyId(cid);
   };
 
   useEffect(() => {

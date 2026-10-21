@@ -11,7 +11,7 @@ import {
   processWarmerTick,
 } from "@/lib/warmer.server";
 
-export async function createNumberAction(params: { companyId: string; name: string }) {
+export async function createNumberAction(params: { companyId?: string | null; name: string }) {
   try {
     const res = await createWarmerNumber(params.companyId, params.name);
     return { success: true, data: res };
