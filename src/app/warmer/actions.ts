@@ -67,7 +67,7 @@ export async function graduateNumberAction(numberId: string) {
 
 export async function runWarmerTickAction() {
   try {
-    const stats = await processWarmerTick();
+    const stats = await processWarmerTick({ force: true });
     return { success: true, stats };
   } catch (err: any) {
     return { success: false, error: err.message };

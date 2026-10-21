@@ -620,7 +620,7 @@ async function sendHumanizedMessage(params: {
     await evogoRequest("/message/presence", {
       method: "POST",
       apiKey: fromApiKey,
-      body: { number: presenceTarget, presence: "composing" },
+      body: { number: presenceTarget, state: "composing", presence: "composing" },
     });
   } catch (e) {
     // Presença é opcional, não bloqueia o envio
@@ -647,7 +647,7 @@ async function sendHumanizedMessage(params: {
 // 5. Motor de Grupos de Aquecimento Coletivo
 // =====================================================================
 
-export async function syncWarmerGroups(companyId: string) {
+export async function syncWarmerGroups(companyId: string, isForce: boolean = false) {
   // Busca todos os números conectados da empresa
   const { data: numbers } = await supabaseAdmin
     .from("warmer_numbers")
@@ -680,6 +680,7 @@ export async function syncWarmerGroups(companyId: string) {
         method: "POST",
         apiKey: creator.evogo_api_key,
         body: {
+          groupName,
           name: groupName,
           participants: otherPhones,
         },
@@ -715,9 +716,9 @@ export async function syncWarmerGroups(companyId: string) {
       console.error("[warmer] Erro ao criar grupo de aquecimento:", err.message);
     }
   } else {
-    // Grupo existente: envia interação coletiva se o horário estiver vencido
+    // Grupo existente: envia interação coletiva se o horário estiver vencido ou se for tick forçado
     const now = new Date();
-    const isDue = !existingGroup.next_interaction_at || new Date(existingGroup.next_interaction_at) <= now;
+    const isDue = isForce || !existingGroup.next_interaction_at || new Date(existingGroup.next_interaction_at) <= now;
     if (isDue) {
       const sender = numbers[Math.floor(Math.random() * numbers.length)];
       if (sender?.evogo_api_key) {
@@ -772,11 +773,12 @@ export async function syncWarmerGroups(companyId: string) {
 // 6. Ciclo Principal do Motor (Executado via Cron Tick)
 // =====================================================================
 
-export async function processWarmerTick(): Promise<{
+export async function processWarmerTick(options?: { force?: boolean }): Promise<{
   processedDialogs: number;
   newDialogsStarted: number;
   groupInteractions: number;
 }> {
+  const isForce = Boolean(options?.force);
   const now = new Date();
   const currentHour = now.getHours(); // Horário do servidor
 
@@ -835,19 +837,23 @@ export async function processWarmerTick(): Promise<{
       }
     }
 
-    // Janela de sono noturno: se estiver fora do horário, pula
-    if (currentHour < settings.start_hour || currentHour >= settings.end_hour) {
+    // Janela de sono noturno: se estiver fora do horário (e não for disparo forçado manual), pula
+    if (!isForce && (currentHour < settings.start_hour || currentHour >= settings.end_hour)) {
       continue;
     }
 
-    // 2. Processa diálogos 1x1 ativos que estão na hora de enviar mensagem
-    const { data: dueDialogs } = await supabaseAdmin
+    // 2. Processa diálogos 1x1 ativos que estão na hora de enviar mensagem (ou todos se for disparo manual)
+    let dialogQuery = supabaseAdmin
       .from("warmer_dialogs")
       .select("*, initiator:initiator_number_id(*), responder:responder_number_id(*)")
       .eq("company_id", comp.id)
-      .eq("status", "active")
-      .lte("next_message_at", now.toISOString())
-      .limit(3);
+      .eq("status", "active");
+
+    if (!isForce) {
+      dialogQuery = dialogQuery.lte("next_message_at", now.toISOString());
+    }
+
+    const { data: dueDialogs } = await dialogQuery.limit(3);
 
     if (dueDialogs && dueDialogs.length > 0) {
       for (const dialog of dueDialogs) {
@@ -1003,28 +1009,95 @@ export async function processWarmerTick(): Promise<{
 
         if (n1.id !== n2.id && n1.phone_number && n2.phone_number) {
           const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
-          const initialDelaySecs = 15 + Math.floor(Math.random() * 30);
 
-          await supabaseAdmin.from("warmer_dialogs").insert({
-            company_id: comp.id,
-            initiator_number_id: n1.id,
-            responder_number_id: n2.id,
+          // 1. Gera a mensagem de abertura do diálogo (Turno 0)
+          const openingText = await generateAIResponse({
+            apiKey: comp.openai_api_key,
+            customPrompt: comp.warmer_prompt,
             topic,
-            turn_count: 0,
-            max_turns: settings.max_turns_per_dialog,
-            next_turn_by: n1.id,
-            next_message_at: new Date(Date.now() + initialDelaySecs * 1000).toISOString(),
+            history: [],
+            turnIndex: 0,
+            maxTurns: settings.max_turns_per_dialog,
           });
 
-          newDialogsStarted++;
-          console.log(`[warmer] Nova conversa iniciada entre ${n1.name} e ${n2.name} sobre "${topic}"`);
+          // Delay humanizado para a resposta do segundo chip
+          const delaySecs =
+            settings.min_delay_seconds +
+            Math.floor(Math.random() * (settings.max_delay_seconds - settings.min_delay_seconds));
+          const nextTime = new Date(Date.now() + delaySecs * 1000).toISOString();
+
+          // 2. Cria o diálogo já com o turno 1 aguardando a resposta de n2
+          const { data: createdDialog } = await supabaseAdmin
+            .from("warmer_dialogs")
+            .insert({
+              company_id: comp.id,
+              initiator_number_id: n1.id,
+              responder_number_id: n2.id,
+              topic,
+              turn_count: 1,
+              max_turns: settings.max_turns_per_dialog,
+              next_turn_by: n2.id,
+              next_message_at: nextTime,
+              last_message_content: openingText,
+            })
+            .select()
+            .single();
+
+          if (createdDialog) {
+            newDialogsStarted++;
+            console.log(`[warmer] Nova conversa iniciada entre ${n1.name} e ${n2.name} sobre "${topic}"`);
+
+            // 3. Dispara a mensagem de abertura imediatamente!
+            try {
+              await sendHumanizedMessage({
+                fromApiKey: n1.evogo_api_key,
+                toPhone: n2.phone_number,
+                content: openingText,
+              });
+
+              // Registra a mensagem no histórico
+              await supabaseAdmin.from("warmer_messages").insert({
+                company_id: comp.id,
+                dialog_id: createdDialog.id,
+                from_number_id: n1.id,
+                to_number_id: n2.id,
+                from_phone: n1.phone_number,
+                to_phone: n2.phone_number,
+                content: openingText,
+                turn_index: 0,
+              });
+
+              // Atualiza contadores dos chips
+              await supabaseAdmin
+                .from("warmer_numbers")
+                .update({
+                  messages_sent_today: (n1.messages_sent_today || 0) + 1,
+                  total_messages_sent: (n1.total_messages_sent || 0) + 1,
+                  last_activity_at: now.toISOString(),
+                })
+                .eq("id", n1.id);
+
+              await supabaseAdmin
+                .from("warmer_numbers")
+                .update({
+                  messages_received_today: (n2.messages_received_today || 0) + 1,
+                  total_messages_received: (n2.total_messages_received || 0) + 1,
+                  last_activity_at: now.toISOString(),
+                })
+                .eq("id", n2.id);
+
+              processedDialogs++;
+            } catch (err: any) {
+              console.error(`[warmer] Falha no disparo inicial do diálogo ${createdDialog.id}:`, err.message);
+            }
+          }
         }
       }
     }
 
     // 4. Sincroniza e movimenta grupos de aquecimento
     if (settings.enable_groups) {
-      await syncWarmerGroups(comp.id);
+      await syncWarmerGroups(comp.id, isForce);
     }
   }
 
