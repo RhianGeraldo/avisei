@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS public.warmer_numbers (
   evogo_instance_id TEXT,
   evogo_api_key TEXT,
   status TEXT NOT NULL DEFAULT 'disconnected' 
-    CHECK (status IN ('disconnected', 'connecting', 'idle', 'warming', 'paused', 'banned')),
+    CHECK (status IN ('disconnected', 'connecting', 'idle', 'warming', 'paused', 'banned', 'graduated')),
   profile_picture_url TEXT,
   profile_name TEXT,
   current_day INTEGER NOT NULL DEFAULT 1,
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS public.warmer_numbers (
   total_messages_received INTEGER NOT NULL DEFAULT 0,
   last_activity_at TIMESTAMPTZ,
   cooldown_until TIMESTAMPTZ,
+  graduated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

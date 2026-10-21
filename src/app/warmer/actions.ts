@@ -6,6 +6,7 @@ import {
   getWarmerNumberQr,
   toggleWarmerNumber,
   deleteWarmerNumber,
+  graduateWarmerNumber,
   processWarmerTick,
 } from "@/lib/warmer.server";
 
@@ -39,6 +40,15 @@ export async function toggleNumberAction(params: { numberId: string; pause: bool
 export async function deleteNumberAction(numberId: string) {
   try {
     await deleteWarmerNumber(numberId);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function graduateNumberAction(numberId: string) {
+  try {
+    await graduateWarmerNumber(numberId);
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };

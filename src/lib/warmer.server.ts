@@ -1,7 +1,7 @@
 // Server-only: Motor de Aquecimento e Maturação de Chips do WhatsApp (Estilo MaturaGo)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-export type WarmerStatus = "disconnected" | "connecting" | "idle" | "warming" | "paused" | "banned";
+export type WarmerStatus = "disconnected" | "connecting" | "idle" | "warming" | "paused" | "banned" | "graduated";
 
 export type WarmerSettings = {
   daily_limit_min: number;
@@ -235,6 +235,47 @@ export async function toggleWarmerNumber(numberId: string, pause: boolean) {
     .eq("id", numberId);
 
   if (error) throw error;
+}
+
+export async function graduateWarmerNumber(numberId: string) {
+  const { data: num, error } = await supabaseAdmin
+    .from("warmer_numbers")
+    .select("evogo_instance_id, evogo_instance_name, evogo_api_key")
+    .eq("id", numberId)
+    .single();
+
+  if (error || !num) throw new Error("Chip de aquecimento não encontrado.");
+
+  // 1. Desconecta a sessão do WhatsApp no EvoGo para liberar o uso no outro celular
+  try {
+    const target = num.evogo_instance_id || num.evogo_instance_name;
+    await evogoRequest(`/instance/logout`, {
+      method: "POST",
+      apiKey: num.evogo_api_key,
+    });
+  } catch (e) {
+    // Continua mesmo se já desconectado
+  }
+
+  // 2. Encerra diálogos ativos que envolviam este chip
+  await supabaseAdmin
+    .from("warmer_dialogs")
+    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .eq("status", "active")
+    .or(`initiator_number_id.eq.${numberId},responder_number_id.eq.${numberId}`);
+
+  // 3. Marca o chip como graduado no histórico
+  const { error: updateErr } = await supabaseAdmin
+    .from("warmer_numbers")
+    .update({
+      status: "graduated",
+      health_score: 100,
+      graduated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", numberId);
+
+  if (updateErr) throw updateErr;
 }
 
 export async function deleteWarmerNumber(numberId: string) {

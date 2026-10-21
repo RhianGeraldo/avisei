@@ -46,12 +46,16 @@ import {
   ShieldCheck,
   AlertCircle,
   Clock,
+  GraduationCap,
+  CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
 import {
   createNumberAction,
   getNumberQrAction,
   toggleNumberAction,
   deleteNumberAction,
+  graduateNumberAction,
   runWarmerTickAction,
 } from "./actions";
 
@@ -67,6 +71,8 @@ export default function WarmerPage() {
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [runningTick, setRunningTick] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [graduatingChip, setGraduatingChip] = useState<any | null>(null);
+  const [graduating, setGraduating] = useState(false);
 
   // 1. Busca lista de chips de aquecimento da empresa
   const { data: chips = [], isLoading: loadingChips } = useQuery({
@@ -219,12 +225,32 @@ export default function WarmerPage() {
     }
   };
 
-  // Métricas de resumo
-  const totalConnected = chips.filter((c: any) => c.status === "warming" || c.status === "idle").length;
-  const totalWarming = chips.filter((c: any) => (c.status === "warming" || c.status === "idle") && c.current_day < 14).length;
-  const totalHot = chips.filter((c: any) => c.current_day >= 14).length;
-  const msgsSentToday = chips.reduce((acc: number, c: any) => acc + (c.messages_sent_today || 0), 0);
-  const msgsReceivedToday = chips.reduce((acc: number, c: any) => acc + (c.messages_received_today || 0), 0);
+  // Ação: Concluir / Graduar Chip para transferência
+  const handleConfirmGraduate = async () => {
+    if (!graduatingChip) return;
+    setGraduating(true);
+    const res = await graduateNumberAction(graduatingChip.id);
+    setGraduating(false);
+    if (res.success) {
+      toast.success(
+        `Chip ${graduatingChip.name} graduado com sucesso! Sessão desconectada para transferência.`
+      );
+      setGraduatingChip(null);
+      qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
+    } else {
+      toast.error("Falha ao graduar chip: " + res.error);
+    }
+  };
+
+  // Métricas de resumo (separando ativos de graduados/transferidos)
+  const activeChips = chips.filter((c: any) => c.status !== "graduated");
+  const graduatedChips = chips.filter((c: any) => c.status === "graduated");
+  const totalConnected = activeChips.filter((c: any) => c.status === "warming" || c.status === "idle").length;
+  const totalWarming = activeChips.filter((c: any) => (c.status === "warming" || c.status === "idle") && c.current_day < 14).length;
+  const totalHot = activeChips.filter((c: any) => c.current_day >= 14).length;
+  const totalGraduated = graduatedChips.length;
+  const msgsSentToday = activeChips.reduce((acc: number, c: any) => acc + (c.messages_sent_today || 0), 0);
+  const msgsReceivedToday = activeChips.reduce((acc: number, c: any) => acc + (c.messages_received_today || 0), 0);
 
   return (
     <AppLayout title="Aquecedor de Números">
@@ -271,47 +297,60 @@ export default function WarmerPage() {
         </div>
 
         {/* Cards de Métricas */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Card className="glass">
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Chips Conectados</CardDescription>
+              <CardDescription className="text-xs">Chips Ativos</CardDescription>
               <CardTitle className="text-2xl font-bold flex items-center justify-between">
                 {totalConnected}
                 <Phone className="h-4 w-4 text-primary opacity-70" />
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">Total cadastrado: {chips.length}</p>
+              <p className="text-xs text-muted-foreground">Em aquecimento</p>
             </CardContent>
           </Card>
 
           <Card className="glass">
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Aquecendo Ativos</CardDescription>
+              <CardDescription className="text-xs">Aquecendo (Dia &lt; 14)</CardDescription>
               <CardTitle className="text-2xl font-bold text-amber-500 flex items-center justify-between">
                 {totalWarming}
                 <Flame className="h-4 w-4 text-amber-500 opacity-70" />
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">Em maturação progressiva</p>
+              <p className="text-xs text-muted-foreground">Maturando na esteira</p>
             </CardContent>
           </Card>
 
           <Card className="glass">
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Chips Prontos / Quentes</CardDescription>
+              <CardDescription className="text-xs">Prontos / Quentes</CardDescription>
               <CardTitle className="text-2xl font-bold text-emerald-500 flex items-center justify-between">
                 {totalHot}
                 <ShieldCheck className="h-4 w-4 text-emerald-500 opacity-70" />
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">Prontos para campanhas</p>
+              <p className="text-xs text-muted-foreground">Prontos p/ transferir</p>
             </CardContent>
           </Card>
 
           <Card className="glass">
+            <CardHeader className="pb-2">
+              <CardDescription className="text-xs">Graduados 🎓</CardDescription>
+              <CardTitle className="text-2xl font-bold text-blue-500 flex items-center justify-between">
+                {totalGraduated}
+                <GraduationCap className="h-4 w-4 text-blue-500 opacity-70" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">Já transferidos</p>
+            </CardContent>
+          </Card>
+
+          <Card className="glass col-span-2 lg:col-span-1">
             <CardHeader className="pb-2">
               <CardDescription className="text-xs">Mensagens Hoje</CardDescription>
               <CardTitle className="text-2xl font-bold flex items-center justify-between">
@@ -321,7 +360,7 @@ export default function WarmerPage() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
-                ↑ {msgsSentToday} enviadas · ↓ {msgsReceivedToday} recebidas
+                ↑ {msgsSentToday} · ↓ {msgsReceivedToday}
               </p>
             </CardContent>
           </Card>
@@ -329,17 +368,21 @@ export default function WarmerPage() {
 
         {/* Abas Principais */}
         <Tabs defaultValue="chips" className="space-y-4">
-          <TabsList className="bg-muted/50 p-1">
+          <TabsList className="bg-muted/50 p-1 flex-wrap">
             <TabsTrigger value="chips" className="gap-2">
-              <Flame className="h-4 w-4" />
-              Chips em Aquecimento ({chips.length})
+              <Flame className="h-4 w-4 text-amber-500" />
+              Chips em Aquecimento ({activeChips.length})
+            </TabsTrigger>
+            <TabsTrigger value="graduated" className="gap-2">
+              <GraduationCap className="h-4 w-4 text-blue-500" />
+              Histórico de Graduados ({graduatedChips.length})
             </TabsTrigger>
             <TabsTrigger value="groups" className="gap-2">
-              <Users className="h-4 w-4" />
+              <Users className="h-4 w-4 text-primary" />
               Grupos Coletivos ({groups.length})
             </TabsTrigger>
             <TabsTrigger value="logs" className="gap-2">
-              <Clock className="h-4 w-4" />
+              <Clock className="h-4 w-4 text-muted-foreground" />
               Feed ao Vivo
             </TabsTrigger>
           </TabsList>
@@ -351,15 +394,15 @@ export default function WarmerPage() {
                 <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
                 <p className="text-sm text-muted-foreground mt-2">Carregando chips...</p>
               </div>
-            ) : chips.length === 0 ? (
+            ) : activeChips.length === 0 ? (
               <Card className="glass border-dashed text-center py-16">
                 <CardContent className="space-y-3">
                   <div className="mx-auto w-12 h-12 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
                     <Flame className="h-6 w-6" />
                   </div>
-                  <h3 className="font-semibold text-lg">Nenhum chip conectado ainda</h3>
+                  <h3 className="font-semibold text-lg">Nenhum chip ativo na esteira</h3>
                   <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                    Conecte pelo menos 2 chips de WhatsApp para que eles comecem a conversar entre si e interagir nos grupos automaticamente.
+                    Conecte novos chips de WhatsApp para iniciar a maturação automatizada com IA anti-looping e grupos.
                   </p>
                   <Button
                     onClick={() => {
@@ -370,13 +413,13 @@ export default function WarmerPage() {
                     className="bg-amber-600 hover:bg-amber-700 text-white"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Conectar Primeiro Chip
+                    Conectar Novo Chip
                   </Button>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {chips.map((chip: any) => {
+                {activeChips.map((chip: any) => {
                   const isConnected = chip.status === "warming" || chip.status === "idle";
                   const isPaused = chip.status === "paused";
                   const isConnecting = chip.status === "connecting";
@@ -444,39 +487,53 @@ export default function WarmerPage() {
                         </div>
 
                         {/* Ações do Chip */}
-                        <div className="flex items-center justify-between pt-2 border-t border-border/40">
-                          {isConnected || isPaused ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-xs h-8 px-2"
-                              onClick={() => handleToggleStatus(chip)}
-                            >
-                              {isPaused ? (
-                                <>
-                                  <Play className="h-3.5 w-3.5 mr-1 text-emerald-500" /> Retomar
-                                </>
-                              ) : (
-                                <>
-                                  <Pause className="h-3.5 w-3.5 mr-1 text-amber-500" /> Pausar
-                                </>
-                              )}
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs h-8"
-                              onClick={() => handleOpenQrForExisting(chip.id)}
-                            >
-                              <QrCode className="h-3.5 w-3.5 mr-1" /> Ler QR Code
-                            </Button>
-                          )}
+                        <div className="flex items-center justify-between pt-2 border-t border-border/40 gap-1">
+                          <div className="flex items-center gap-1.5">
+                            {isConnected || isPaused ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-8 px-2"
+                                onClick={() => handleToggleStatus(chip)}
+                              >
+                                {isPaused ? (
+                                  <>
+                                    <Play className="h-3.5 w-3.5 mr-1 text-emerald-500" /> Retomar
+                                  </>
+                                ) : (
+                                  <>
+                                    <Pause className="h-3.5 w-3.5 mr-1 text-amber-500" /> Pausar
+                                  </>
+                                )}
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-8"
+                                onClick={() => handleOpenQrForExisting(chip.id)}
+                              >
+                                <QrCode className="h-3.5 w-3.5 mr-1" /> Ler QR Code
+                              </Button>
+                            )}
+
+                            {isConnected && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-8 px-2 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+                                onClick={() => setGraduatingChip(chip)}
+                                title="Concluir aquecimento e transferir chip"
+                              >
+                                <GraduationCap className="h-3.5 w-3.5 mr-1" /> Graduar
+                              </Button>
+                            )}
+                          </div>
 
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive/70 hover:text-destructive"
+                            className="h-8 w-8 text-destructive/70 hover:text-destructive shrink-0"
                             onClick={() => handleDelete(chip.id)}
                             disabled={deletingId === chip.id}
                           >
@@ -489,6 +546,74 @@ export default function WarmerPage() {
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* ABA: Histórico de Graduados */}
+          <TabsContent value="graduated">
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <GraduationCap className="h-5 w-5 text-blue-500" />
+                  Histórico de Chips Aquecidos & Transferidos
+                </CardTitle>
+                <CardDescription>
+                  Registro permanente de todos os números que concluíram a maturação e foram liberados para a operação comercial.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {graduatedChips.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground text-sm space-y-2">
+                    <GraduationCap className="h-10 w-10 mx-auto text-muted-foreground/40" />
+                    <p className="font-medium">Nenhum chip graduado ainda.</p>
+                    <p className="text-xs max-w-sm mx-auto">
+                      Assim que um chip atingir a maturidade desejada (Dia 14) e você transferi-lo para outro aparelho, ele ficará registrado aqui.
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Identificação</TableHead>
+                        <TableHead>Telefone</TableHead>
+                        <TableHead>Dias de Aquecimento</TableHead>
+                        <TableHead>Total de Mensagens</TableHead>
+                        <TableHead>Data de Graduação</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {graduatedChips.map((g: any) => (
+                        <TableRow key={g.id}>
+                          <TableCell className="font-semibold text-sm">
+                            {g.name}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {g.phone_number ? `+${g.phone_number}` : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            Dia {g.current_day || 14} de 14
+                          </TableCell>
+                          <TableCell className="text-xs font-medium">
+                            {g.total_messages_sent || 0} msgs
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {g.graduated_at
+                              ? format(new Date(g.graduated_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
+                              : format(new Date(g.updated_at), "dd/MM/yyyy", { locale: ptBR })}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className="bg-emerald-600/15 text-emerald-600 border-emerald-500/30 gap-1">
+                              <ShieldCheck className="h-3 w-3" />
+                              Aquecido & Transferido
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ABA 2: Grupos de Aquecimento */}
@@ -674,6 +799,93 @@ export default function WarmerPage() {
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                   Aguardando leitura do WhatsApp...
                 </p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Graduar e Transferir Chip */}
+        <Dialog open={!!graduatingChip} onOpenChange={(open) => !open && setGraduatingChip(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-emerald-600">
+                <GraduationCap className="h-5 w-5" />
+                Graduar e Transferir Chip
+              </DialogTitle>
+              <DialogDescription>
+                Conclua a maturação deste número para liberá-lo com segurança para a sua equipe de vendas ou operação.
+              </DialogDescription>
+            </DialogHeader>
+
+            {graduatingChip && (
+              <div className="space-y-4 pt-1">
+                <div className="bg-muted/40 p-3 rounded-lg border text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Chip:</span>
+                    <span className="font-semibold text-foreground">{graduatingChip.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Número:</span>
+                    <span className="font-mono font-medium">
+                      {graduatingChip.phone_number ? `+${graduatingChip.phone_number}` : "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Dias de Aquecimento:</span>
+                    <span className="font-medium text-emerald-600">
+                      Dia {graduatingChip.current_day || 14} de 14
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Mensagens Trocadas:</span>
+                    <span className="font-medium">
+                      {graduatingChip.total_messages_sent || 0} enviadas
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1.5">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                    Orientações de Contingência para o Celular:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] leading-relaxed">
+                    <li>
+                      A sessão deste chip no aquecedor será <strong>desconectada</strong> para você poder usá-lo livremente no celular definitivo.
+                    </li>
+                    <li>
+                      No aparelho de onde ele saiu, <strong>limpe os dados do WhatsApp</strong> (no Android em Configurações &gt; Apps &gt; Limpar Dados, ou reinstale no iPhone).
+                    </li>
+                    <li>
+                      Ao cadastrar o próximo chip virgem no aparelho, faça a ativação usando o <strong>4G/5G</strong> da linha nova para evitar cruzamento de dados.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setGraduatingChip(null)}
+                    disabled={graduating}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleConfirmGraduate}
+                    disabled={graduating}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    {graduating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Graduando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 mr-1.5" /> Confirmar e Desconectar
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>

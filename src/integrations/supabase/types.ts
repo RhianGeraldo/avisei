@@ -883,6 +883,7 @@ export type Database = {
           total_messages_received: number
           last_activity_at: string | null
           cooldown_until: string | null
+          graduated_at: string | null
           created_at: string
           updated_at: string
         }
@@ -905,6 +906,7 @@ export type Database = {
           total_messages_received?: number
           last_activity_at?: string | null
           cooldown_until?: string | null
+          graduated_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -927,6 +929,7 @@ export type Database = {
           total_messages_received?: number
           last_activity_at?: string | null
           cooldown_until?: string | null
+          graduated_at?: string | null
           created_at?: string
           updated_at?: string
         }
