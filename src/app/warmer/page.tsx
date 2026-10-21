@@ -49,6 +49,7 @@ import {
   GraduationCap,
   CheckCircle2,
   ArrowRight,
+  Server,
 } from "lucide-react";
 import {
   createNumberAction,
@@ -510,6 +511,12 @@ export default function WarmerPage() {
                               <CardDescription className="font-mono text-xs mt-0.5">
                                 {chip.phone_number ? `+${chip.phone_number}` : "Aguardando conexão..."}
                               </CardDescription>
+                              <div className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground/80 mt-1 truncate">
+                                <Server className="h-3 w-3 shrink-0 opacity-70 text-amber-500" />
+                                <span className="truncate" title={`Instância: ${chip.evogo_instance_name}`}>
+                                  {chip.evogo_instance_name}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div className="shrink-0">
@@ -689,6 +696,10 @@ export default function WarmerPage() {
                                 {g.profile_name && (
                                   <p className="text-xs text-muted-foreground truncate">{g.profile_name}</p>
                                 )}
+                                <p className="text-[10px] font-mono text-muted-foreground/80 flex items-center gap-1 mt-0.5">
+                                  <Server className="h-2.5 w-2.5 opacity-60 text-amber-500" />
+                                  {g.evogo_instance_name}
+                                </p>
                               </div>
                             </div>
                           </TableCell>
@@ -985,6 +996,13 @@ export default function WarmerPage() {
                         <p className="text-xs text-muted-foreground truncate">{graduatingChip.profile_name}</p>
                       )}
                     </div>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Instância EvoGo:</span>
+                    <span className="font-mono text-xs flex items-center gap-1 text-foreground">
+                      <Server className="h-3 w-3 text-amber-500 opacity-80" />
+                      {graduatingChip.evogo_instance_name}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Número:</span>
