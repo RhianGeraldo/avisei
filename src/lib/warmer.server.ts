@@ -100,6 +100,65 @@ async function evogoRequest(
 // 2. Gerenciamento de Números / Instâncias do Aquecedor
 // =====================================================================
 
+async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
+  let phone: string | null = null;
+  let profileName: string | null = null;
+  let profilePicUrl: string | null = null;
+
+  try {
+    const infoRes = await evogoRequest(`/instance/info/${evogoInstanceId}`, {
+      method: "GET",
+      apiKey: evogoApiKey,
+      timeoutMs: 8000,
+    });
+    const inst = infoRes?.instance || infoRes?.data || infoRes;
+    const jid = inst?.ownerJid || inst?.owner || inst?.jid || "";
+    if (jid) {
+      phone = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
+    }
+    profileName = inst?.profileName || inst?.pushName || inst?.name || null;
+    profilePicUrl = inst?.profilePicUrl || inst?.profilePictureUrl || inst?.avatar || null;
+  } catch (err) {
+    console.warn("[warmer] Erro ao buscar /instance/info:", err);
+  }
+
+  if (phone && !profilePicUrl) {
+    try {
+      const avatarRes = await evogoRequest("/user/avatar", {
+        method: "POST",
+        apiKey: evogoApiKey,
+        body: { number: phone, preview: false },
+        timeoutMs: 6000,
+      });
+      const url = avatarRes?.url || avatarRes?.data?.url || avatarRes?.profilePicUrl || avatarRes?.avatar;
+      if (url && typeof url === "string" && url.startsWith("http")) {
+        profilePicUrl = url;
+      }
+    } catch (e) {
+      // Ignora erro de avatar
+    }
+  }
+
+  if (phone && !profileName) {
+    try {
+      const userRes = await evogoRequest("/user/info", {
+        method: "POST",
+        apiKey: evogoApiKey,
+        body: { number: [phone] },
+        timeoutMs: 6000,
+      });
+      const first = Array.isArray(userRes?.data) ? userRes.data[0] : Array.isArray(userRes) ? userRes[0] : userRes;
+      if (first?.name || first?.pushName || first?.notify) {
+        profileName = first.name || first.pushName || first.notify;
+      }
+    } catch (e) {
+      // Ignora erro de user/info
+    }
+  }
+
+  return { phone, profileName, profilePicUrl };
+}
+
 export async function createWarmerNumber(companyId: string, name: string) {
   const cleanName = name.trim();
   if (!cleanName) throw new Error("Informe um nome para identificar o chip.");
@@ -146,6 +205,8 @@ export async function getWarmerNumberQr(numberId: string): Promise<{
   status: WarmerStatus;
   qrCode: string | null;
   phoneNumber?: string;
+  profileName?: string;
+  profilePictureUrl?: string;
 }> {
   const { data: num, error } = await supabaseAdmin
     .from("warmer_numbers")
@@ -168,25 +229,12 @@ export async function getWarmerNumberQr(numberId: string): Promise<{
       statusRes?.data?.status === "connected";
 
     if (isConnected) {
-      // Busca informações do perfil/telefone
-      let phone = num.phone_number;
-      let profileName = num.profile_name;
-      let pic = num.profile_picture_url;
+      const target = num.evogo_instance_id || num.evogo_instance_name;
+      const profile = await fetchChipProfile(target, num.evogo_api_key);
 
-      try {
-        const infoRes = await evogoRequest(`/instance/info/${num.evogo_instance_id || num.evogo_instance_name}`, {
-          method: "GET",
-          apiKey: num.evogo_api_key,
-        });
-        const inst = infoRes?.instance || infoRes?.data || infoRes;
-        const jid = inst?.ownerJid || inst?.owner || inst?.jid || "";
-        const cleanPhone = jid.split("@")[0].replace(/\D/g, "");
-        if (cleanPhone) phone = cleanPhone;
-        if (inst?.profileName) profileName = inst.profileName;
-        if (inst?.profilePicUrl) pic = inst.profilePicUrl;
-      } catch (e) {
-        console.warn("[warmer] Falha ao ler info detalhada do chip:", e);
-      }
+      const phone = profile.phone || num.phone_number;
+      const profileName = profile.profileName || num.profile_name;
+      const pic = profile.profilePicUrl || num.profile_picture_url;
 
       await supabaseAdmin
         .from("warmer_numbers")
@@ -199,7 +247,13 @@ export async function getWarmerNumberQr(numberId: string): Promise<{
         })
         .eq("id", numberId);
 
-      return { status: "warming", qrCode: null, phoneNumber: phone };
+      return {
+        status: num.status === "paused" ? "paused" : "warming",
+        qrCode: null,
+        phoneNumber: phone || undefined,
+        profileName: profileName || undefined,
+        profilePictureUrl: pic || undefined,
+      };
     }
   } catch (err) {
     console.warn(`[warmer] Erro ao checar status do chip ${num.name}:`, err);
@@ -235,6 +289,36 @@ export async function toggleWarmerNumber(numberId: string, pause: boolean) {
     .eq("id", numberId);
 
   if (error) throw error;
+}
+
+export async function refreshChipProfile(numberId: string) {
+  const { data: num, error } = await supabaseAdmin
+    .from("warmer_numbers")
+    .select("*")
+    .eq("id", numberId)
+    .single();
+
+  if (error || !num) throw new Error("Número de aquecimento não encontrado.");
+
+  const target = num.evogo_instance_id || num.evogo_instance_name;
+  const profile = await fetchChipProfile(target, num.evogo_api_key);
+
+  const updates: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (profile.phone) updates.phone_number = profile.phone;
+  if (profile.profileName) updates.profile_name = profile.profileName;
+  if (profile.profilePicUrl) updates.profile_picture_url = profile.profilePicUrl;
+
+  const { data: updated, error: updateErr } = await supabaseAdmin
+    .from("warmer_numbers")
+    .update(updates)
+    .eq("id", numberId)
+    .select("*")
+    .single();
+
+  if (updateErr) throw updateErr;
+  return updated;
 }
 
 export async function graduateWarmerNumber(numberId: string) {

@@ -5,6 +5,7 @@ import {
   createWarmerNumber,
   getWarmerNumberQr,
   toggleWarmerNumber,
+  refreshChipProfile,
   deleteWarmerNumber,
   graduateWarmerNumber,
   processWarmerTick,
@@ -32,6 +33,15 @@ export async function toggleNumberAction(params: { numberId: string; pause: bool
   try {
     await toggleWarmerNumber(params.numberId, params.pause);
     return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function refreshChipProfileAction(numberId: string) {
+  try {
+    const updated = await refreshChipProfile(numberId);
+    return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

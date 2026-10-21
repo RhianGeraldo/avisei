@@ -54,10 +54,12 @@ import {
   createNumberAction,
   getNumberQrAction,
   toggleNumberAction,
+  refreshChipProfileAction,
   deleteNumberAction,
   graduateNumberAction,
   runWarmerTickAction,
 } from "./actions";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function WarmerPage() {
   const { companyId } = useAuth();
@@ -73,6 +75,12 @@ export default function WarmerPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [graduatingChip, setGraduatingChip] = useState<any | null>(null);
   const [graduating, setGraduating] = useState(false);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [connectedProfile, setConnectedProfile] = useState<{
+    phone?: string;
+    profileName?: string;
+    profilePictureUrl?: string;
+  } | null>(null);
 
   // 1. Busca lista de chips de aquecimento da empresa
   const { data: chips = [], isLoading: loadingChips } = useQuery({
@@ -130,10 +138,20 @@ export default function WarmerPage() {
       const res = await getNumberQrAction(activeQrChipId);
       if (res.success && res.data) {
         if (res.data.status === "warming" || res.data.phoneNumber) {
+          const profileData = {
+            phone: res.data.phoneNumber,
+            profileName: (res.data as any).profileName,
+            profilePictureUrl: (res.data as any).profilePictureUrl,
+          };
+          setConnectedProfile(profileData);
           toast.success("WhatsApp conectado com sucesso!");
           setActiveQrChipId(null);
-          setConnectModalOpen(false);
           qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
+          // Aguarda 3 segundos mostrando a confirmação com avatar/nome antes de fechar o modal
+          setTimeout(() => {
+            setConnectModalOpen(false);
+            setConnectedProfile(null);
+          }, 3200);
         } else if (res.data.qrCode) {
           setQrCodeData(res.data.qrCode);
         }
@@ -162,6 +180,7 @@ export default function WarmerPage() {
     setCreatingChip(false);
 
     if (res.success && res.data) {
+      setConnectedProfile(null);
       setActiveQrChipId(res.data.number.id);
       setQrCodeData(res.data.qrCode);
       setNewChipName("");
@@ -173,12 +192,26 @@ export default function WarmerPage() {
 
   // Ação: Reabrir QR Code de chip desconectado
   const handleOpenQrForExisting = async (chipId: string) => {
+    setConnectedProfile(null);
     setActiveQrChipId(chipId);
     setConnectModalOpen(true);
     setQrCodeData(null);
     const res = await getNumberQrAction(chipId);
     if (res.success && res.data?.qrCode) {
       setQrCodeData(res.data.qrCode);
+    }
+  };
+
+  // Ação: Sincronizar Perfil (Foto e Nome do WhatsApp)
+  const handleRefreshProfile = async (chipId: string) => {
+    setRefreshingId(chipId);
+    const res = await refreshChipProfileAction(chipId);
+    setRefreshingId(null);
+    if (res.success) {
+      toast.success("Perfil do WhatsApp sincronizado com sucesso!");
+      qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
+    } else {
+      toast.error("Falha ao sincronizar perfil: " + (res.error || "Erro"));
     }
   };
 
@@ -430,31 +463,48 @@ export default function WarmerPage() {
                     <Card key={chip.id} className="glass hover:border-primary/40 transition-all flex flex-col justify-between">
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <CardTitle className="text-base font-semibold">{chip.name}</CardTitle>
-                            <CardDescription className="font-mono text-xs mt-0.5">
-                              {chip.phone_number ? `+${chip.phone_number}` : "Aguardando conexão..."}
-                            </CardDescription>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Avatar className="h-11 w-11 border border-border/60 shrink-0">
+                              <AvatarImage src={chip.profile_picture_url || undefined} alt={chip.profile_name || chip.name} />
+                              <AvatarFallback className="bg-amber-500/10 text-amber-600 font-semibold text-sm">
+                                {(chip.profile_name || chip.name || "W").slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <CardTitle className="text-base font-semibold truncate" title={chip.name}>
+                                {chip.name}
+                              </CardTitle>
+                              {chip.profile_name && (
+                                <p className="text-xs text-muted-foreground truncate font-medium" title={chip.profile_name}>
+                                  {chip.profile_name}
+                                </p>
+                              )}
+                              <CardDescription className="font-mono text-xs mt-0.5">
+                                {chip.phone_number ? `+${chip.phone_number}` : "Aguardando conexão..."}
+                              </CardDescription>
+                            </div>
                           </div>
-                          {isPaused ? (
-                            <Badge variant="outline" className="bg-muted text-muted-foreground">
-                              Pausado
-                            </Badge>
-                          ) : isConnecting ? (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
-                              Conectando...
-                            </Badge>
-                          ) : isHot ? (
-                            <Badge className="bg-emerald-600 text-white gap-1">
-                              <ShieldCheck className="h-3 w-3" />
-                              Aquecido 🔥
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 gap-1 animate-pulse">
-                              <Flame className="h-3 w-3" />
-                              Aquecendo
-                            </Badge>
-                          )}
+                          <div className="shrink-0">
+                            {isPaused ? (
+                              <Badge variant="outline" className="bg-muted text-muted-foreground">
+                                Pausado
+                              </Badge>
+                            ) : isConnecting ? (
+                              <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                                Conectando...
+                              </Badge>
+                            ) : isHot ? (
+                              <Badge className="bg-emerald-600 text-white gap-1">
+                                <ShieldCheck className="h-3 w-3" />
+                                Aquecido 🔥
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 gap-1 animate-pulse">
+                                <Flame className="h-3 w-3" />
+                                Aquecendo
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </CardHeader>
 
@@ -488,7 +538,7 @@ export default function WarmerPage() {
 
                         {/* Ações do Chip */}
                         <div className="flex items-center justify-between pt-2 border-t border-border/40 gap-1">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {isConnected || isPaused ? (
                               <Button
                                 variant="ghost"
@@ -518,15 +568,29 @@ export default function WarmerPage() {
                             )}
 
                             {isConnected && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-xs h-8 px-2 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
-                                onClick={() => setGraduatingChip(chip)}
-                                title="Concluir aquecimento e transferir chip"
-                              >
-                                <GraduationCap className="h-3.5 w-3.5 mr-1" /> Graduar
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-xs h-8 px-2 text-muted-foreground hover:text-foreground"
+                                  onClick={() => handleRefreshProfile(chip.id)}
+                                  disabled={refreshingId === chip.id}
+                                  title="Atualizar foto e nome do WhatsApp"
+                                >
+                                  <RefreshCw className={`h-3.5 w-3.5 mr-1 ${refreshingId === chip.id ? "animate-spin text-primary" : ""}`} />
+                                  Sincronizar
+                                </Button>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-8 px-2 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+                                  onClick={() => setGraduatingChip(chip)}
+                                  title="Concluir aquecimento e transferir chip"
+                                >
+                                  <GraduationCap className="h-3.5 w-3.5 mr-1" /> Graduar
+                                </Button>
+                              </>
                             )}
                           </div>
 
@@ -584,8 +648,21 @@ export default function WarmerPage() {
                     <TableBody>
                       {graduatedChips.map((g: any) => (
                         <TableRow key={g.id}>
-                          <TableCell className="font-semibold text-sm">
-                            {g.name}
+                          <TableCell>
+                            <div className="flex items-center gap-2.5">
+                              <Avatar className="h-8 w-8 border shrink-0">
+                                <AvatarImage src={g.profile_picture_url || undefined} alt={g.profile_name || g.name} />
+                                <AvatarFallback className="text-xs bg-muted">
+                                  {(g.profile_name || g.name || "W").slice(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm truncate">{g.name}</p>
+                                {g.profile_name && (
+                                  <p className="text-xs text-muted-foreground truncate">{g.profile_name}</p>
+                                )}
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell className="font-mono text-xs">
                             {g.phone_number ? `+${g.phone_number}` : "—"}
@@ -745,7 +822,44 @@ export default function WarmerPage() {
               </DialogDescription>
             </DialogHeader>
 
-            {!activeQrChipId ? (
+            {connectedProfile ? (
+              <div className="space-y-4 text-center py-4">
+                <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center animate-bounce">
+                  <CheckCircle2 className="h-8 w-8" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold text-foreground">WhatsApp Conectado!</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Perfil identificado e vinculado à esteira com sucesso.
+                  </p>
+                </div>
+
+                <div className="mx-auto max-w-sm bg-muted/40 p-4 rounded-xl border flex items-center gap-3.5 text-left">
+                  <Avatar className="h-12 w-12 border border-border/60 shrink-0">
+                    <AvatarImage src={connectedProfile.profilePictureUrl || undefined} alt={connectedProfile.profileName || "WhatsApp"} />
+                    <AvatarFallback className="bg-emerald-500/15 text-emerald-600 font-bold text-sm">
+                      {(connectedProfile.profileName || "W").slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-sm truncate text-foreground">
+                      {connectedProfile.profileName || "Perfil do WhatsApp"}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {connectedProfile.phone ? `+${connectedProfile.phone}` : "Número identificado"}
+                    </p>
+                    <Badge variant="outline" className="mt-1 text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                      Sincronizado
+                    </Badge>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5 animate-pulse pt-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  Iniciando ciclo de maturação...
+                </p>
+              </div>
+            ) : !activeQrChipId ? (
               <form onSubmit={handleStartConnect} className="space-y-4 pt-2">
                 <div className="space-y-2">
                   <Label htmlFor="chipName">Identificação do Chip</Label>
@@ -819,10 +933,20 @@ export default function WarmerPage() {
 
             {graduatingChip && (
               <div className="space-y-4 pt-1">
-                <div className="bg-muted/40 p-3 rounded-lg border text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Chip:</span>
-                    <span className="font-semibold text-foreground">{graduatingChip.name}</span>
+                <div className="bg-muted/40 p-3 rounded-lg border text-sm space-y-2">
+                  <div className="flex items-center gap-3 pb-2 border-b border-border/50">
+                    <Avatar className="h-10 w-10 border border-border/60 shrink-0">
+                      <AvatarImage src={graduatingChip.profile_picture_url || undefined} alt={graduatingChip.profile_name || graduatingChip.name} />
+                      <AvatarFallback className="bg-emerald-500/15 text-emerald-600 font-semibold text-xs">
+                        {(graduatingChip.profile_name || graduatingChip.name || "W").slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm truncate">{graduatingChip.name}</p>
+                      {graduatingChip.profile_name && (
+                        <p className="text-xs text-muted-foreground truncate">{graduatingChip.profile_name}</p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Número:</span>
