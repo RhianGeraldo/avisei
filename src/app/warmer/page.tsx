@@ -810,7 +810,17 @@ export default function WarmerPage() {
         </Tabs>
 
         {/* Modal: Conectar Chip via QR Code */}
-        <Dialog open={connectModalOpen} onOpenChange={setConnectModalOpen}>
+        <Dialog
+          open={connectModalOpen}
+          onOpenChange={(open) => {
+            setConnectModalOpen(open);
+            if (!open) {
+              setActiveQrChipId(null);
+              setQrCodeData(null);
+              setConnectedProfile(null);
+            }
+          }}
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">

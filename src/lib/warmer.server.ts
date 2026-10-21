@@ -106,18 +106,37 @@ async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
   let profilePicUrl: string | null = null;
 
   try {
-    const infoRes = await evogoRequest(`/instance/info/${evogoInstanceId}`, {
-      method: "GET",
-      apiKey: evogoApiKey,
-      timeoutMs: 8000,
-    });
+    // 1. Tenta com adminToken (padrão global de gerenciamento do EvoGo)
+    // Se falhar, tenta com a apiKey da instância
+    let infoRes: any;
+    try {
+      infoRes = await evogoRequest(`/instance/info/${evogoInstanceId}`, {
+        method: "GET",
+        timeoutMs: 8000,
+      });
+    } catch {
+      infoRes = await evogoRequest(`/instance/info/${evogoInstanceId}`, {
+        method: "GET",
+        apiKey: evogoApiKey,
+        timeoutMs: 8000,
+      });
+    }
+
     const inst = infoRes?.instance || infoRes?.data || infoRes;
-    const jid = inst?.ownerJid || inst?.owner || inst?.jid || "";
+    const jid = inst?.ownerJid || inst?.owner || inst?.jid || inst?.JID || inst?.wid || "";
     if (jid) {
       phone = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
     }
-    profileName = inst?.profileName || inst?.pushName || inst?.name || null;
-    profilePicUrl = inst?.profilePicUrl || inst?.profilePictureUrl || inst?.avatar || null;
+    if (!phone && (inst?.phone || inst?.Phone)) {
+      phone = String(inst.phone || inst.Phone).replace(/\D/g, "");
+    }
+    profileName = inst?.profileName || inst?.pushName || inst?.name || inst?.Name || null;
+    profilePicUrl =
+      inst?.profilePicUrl ||
+      inst?.profilePictureUrl ||
+      inst?.avatar ||
+      inst?.picture ||
+      null;
   } catch (err) {
     console.warn("[warmer] Erro ao buscar /instance/info:", err);
   }
@@ -130,7 +149,13 @@ async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
         body: { number: phone, preview: false },
         timeoutMs: 6000,
       });
-      const url = avatarRes?.url || avatarRes?.data?.url || avatarRes?.profilePicUrl || avatarRes?.avatar;
+      const url =
+        avatarRes?.url ||
+        avatarRes?.data?.url ||
+        avatarRes?.profilePicUrl ||
+        avatarRes?.data?.profilePictureUrl ||
+        avatarRes?.picture ||
+        avatarRes?.avatar;
       if (url && typeof url === "string" && url.startsWith("http")) {
         profilePicUrl = url;
       }
@@ -144,7 +169,7 @@ async function fetchChipProfile(evogoInstanceId: string, evogoApiKey: string) {
       const userRes = await evogoRequest("/user/info", {
         method: "POST",
         apiKey: evogoApiKey,
-        body: { number: [phone] },
+        body: { number: [phone], numbers: [phone] },
         timeoutMs: 6000,
       });
       const first = Array.isArray(userRes?.data) ? userRes.data[0] : Array.isArray(userRes) ? userRes[0] : userRes;
@@ -226,7 +251,11 @@ export async function getWarmerNumberQr(numberId: string): Promise<{
     const isConnected =
       statusRes?.instance?.status === "connected" ||
       statusRes?.status === "connected" ||
-      statusRes?.data?.status === "connected";
+      statusRes?.data?.status === "connected" ||
+      Boolean(
+        (statusRes?.data?.Connected || statusRes?.Connected) &&
+        (statusRes?.data?.LoggedIn || statusRes?.LoggedIn || statusRes?.data?.Name || statusRes?.Name)
+      );
 
     if (isConnected) {
       const target = num.evogo_instance_id || num.evogo_instance_name;
@@ -332,10 +361,14 @@ export async function graduateWarmerNumber(numberId: string) {
 
   // 1. Desconecta a sessão do WhatsApp no EvoGo para liberar o uso no outro celular
   try {
-    const target = num.evogo_instance_id || num.evogo_instance_name;
     await evogoRequest(`/instance/logout`, {
-      method: "POST",
+      method: "DELETE",
       apiKey: num.evogo_api_key,
+    }).catch(async () => {
+      await evogoRequest(`/instance/logout`, {
+        method: "POST",
+        apiKey: num.evogo_api_key,
+      });
     });
   } catch (e) {
     // Continua mesmo se já desconectado
@@ -517,14 +550,25 @@ async function sendHumanizedMessage(params: {
   messageType?: "text" | "sticker" | "poll";
 }) {
   const { fromApiKey, toPhone, content } = params;
-  const formattedNumber = toPhone.includes("@") ? toPhone : `${toPhone.replace(/\D/g, "")}@s.whatsapp.net`;
+
+  let formattedNumber = toPhone;
+  if (!formattedNumber.includes("@g.us")) {
+    let digits = toPhone.replace(/\D/g, "");
+    if (digits.length === 10 || digits.length === 11) {
+      digits = `55${digits}`;
+    }
+    formattedNumber = digits;
+  }
 
   // 1. Marca presença "digitando..." (composing)
   try {
+    const presenceTarget = formattedNumber.includes("@")
+      ? formattedNumber
+      : `${formattedNumber}@s.whatsapp.net`;
     await evogoRequest("/message/presence", {
       method: "POST",
       apiKey: fromApiKey,
-      body: { number: formattedNumber, presence: "composing" },
+      body: { number: presenceTarget, presence: "composing" },
     });
   } catch (e) {
     // Presença é opcional, não bloqueia o envio
@@ -577,6 +621,8 @@ export async function syncWarmerGroups(companyId: string) {
       .map((n: any) => `${(n.phone_number || "").replace(/\D/g, "")}@s.whatsapp.net`)
       .filter((p: string) => !p.startsWith("@"));
 
+    if (otherPhones.length === 0) return;
+
     try {
       const created = await evogoRequest("/group/create", {
         method: "POST",
@@ -616,6 +662,57 @@ export async function syncWarmerGroups(companyId: string) {
     } catch (err: any) {
       console.error("[warmer] Erro ao criar grupo de aquecimento:", err.message);
     }
+  } else {
+    // Grupo existente: envia interação coletiva se o horário estiver vencido
+    const now = new Date();
+    const isDue = !existingGroup.next_interaction_at || new Date(existingGroup.next_interaction_at) <= now;
+    if (isDue) {
+      const sender = numbers[Math.floor(Math.random() * numbers.length)];
+      if (sender?.evogo_api_key) {
+        const GROUP_PHRASES = [
+          "Fala pessoal, tudo bom por aí?",
+          "Bom dia a todos!",
+          "Boa tarde turma, como estão as coisas?",
+          "Passando pra desejar um excelente dia pra todo mundo!",
+          "E aí galera, tudo certo?",
+          "Top demais! Bom descanso mais tarde.",
+          "Valeu pessoal, tamo junto!",
+        ];
+        const content = GROUP_PHRASES[Math.floor(Math.random() * GROUP_PHRASES.length)];
+
+        try {
+          await sendHumanizedMessage({
+            fromApiKey: sender.evogo_api_key,
+            toPhone: existingGroup.group_jid,
+            content,
+          });
+
+          await supabaseAdmin.from("warmer_messages").insert({
+            company_id: companyId,
+            group_id: existingGroup.id,
+            from_number_id: sender.id,
+            to_jid: existingGroup.group_jid,
+            from_phone: sender.phone_number,
+            content,
+            message_type: "text",
+          });
+
+          const nextDelayMinutes = 60 + Math.floor(Math.random() * 120); // 1 a 3 horas
+          const nextInteraction = new Date(Date.now() + nextDelayMinutes * 60 * 1000).toISOString();
+
+          await supabaseAdmin
+            .from("warmer_groups")
+            .update({
+              last_interaction_at: now.toISOString(),
+              next_interaction_at: nextInteraction,
+              members_count: numbers.length,
+            })
+            .eq("id", existingGroup.id);
+        } catch (e: any) {
+          console.warn("[warmer] Falha na interação de grupo:", e.message);
+        }
+      }
+    }
   }
 }
 
@@ -649,6 +746,42 @@ export async function processWarmerTick(): Promise<{
       ...DEFAULT_SETTINGS,
       ...(comp.warmer_settings || {}),
     };
+
+    // Atualização diária: avanço da régua de maturação (Dia 1 a 14) e reset de mensagens do dia
+    const { data: allActiveChips } = await supabaseAdmin
+      .from("warmer_numbers")
+      .select("*")
+      .eq("company_id", comp.id)
+      .in("status", ["warming", "idle", "paused"]);
+
+    if (allActiveChips && allActiveChips.length > 0) {
+      const todayStr = now.toISOString().slice(0, 10);
+      for (const chip of allActiveChips) {
+        const daysSinceCreation = Math.max(
+          1,
+          Math.min(
+            14,
+            Math.floor((now.getTime() - new Date(chip.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1
+          )
+        );
+
+        const lastActivityDate = chip.last_activity_at ? chip.last_activity_at.slice(0, 10) : null;
+        const needsDailyReset = lastActivityDate && lastActivityDate !== todayStr;
+
+        const updates: any = {};
+        if (chip.current_day !== daysSinceCreation) {
+          updates.current_day = daysSinceCreation;
+        }
+        if (needsDailyReset && (chip.messages_sent_today > 0 || chip.messages_received_today > 0)) {
+          updates.messages_sent_today = 0;
+          updates.messages_received_today = 0;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await supabaseAdmin.from("warmer_numbers").update(updates).eq("id", chip.id);
+        }
+      }
+    }
 
     // Janela de sono noturno: se estiver fora do horário, pula
     if (currentHour < settings.start_hour || currentHour >= settings.end_hour) {
@@ -796,18 +929,23 @@ export async function processWarmerTick(): Promise<{
       .in("status", ["warming", "idle"])
       .or(`cooldown_until.is.null,cooldown_until.lte.${now.toISOString()}`);
 
-    if (freeNumbers && freeNumbers.length >= 2) {
-      // Verifica quantos diálogos já estão ativos nessa empresa
-      const { count: activeCount } = await supabaseAdmin
-        .from("warmer_dialogs")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", comp.id)
-        .eq("status", "active");
+    // Busca quais números já estão engajados em diálogos ativos agora (anti-colisão)
+    const { data: activeDialogs } = await supabaseAdmin
+      .from("warmer_dialogs")
+      .select("initiator_number_id, responder_number_id")
+      .eq("company_id", comp.id)
+      .eq("status", "active");
 
+    const busyIds = new Set(
+      (activeDialogs || []).flatMap((d: any) => [d.initiator_number_id, d.responder_number_id])
+    );
+    const trulyFreeNumbers = (freeNumbers || []).filter((n: any) => !busyIds.has(n.id));
+
+    if (trulyFreeNumbers.length >= 2) {
       // Permite até 2 diálogos simultâneos por empresa para não sobrecarregar
-      if ((activeCount || 0) < 2) {
+      if ((activeDialogs?.length || 0) < 2) {
         // Embaralha e escolhe 2 números distintos que não estejam já em diálogo ativo
-        const shuffled = freeNumbers.sort(() => 0.5 - Math.random());
+        const shuffled = trulyFreeNumbers.sort(() => 0.5 - Math.random());
         const n1 = shuffled[0];
         const n2 = shuffled[1];
 
