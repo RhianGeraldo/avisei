@@ -112,7 +112,7 @@ export async function startSession(
     .trim()
     .replace(/\s+/g, " ");
   if (personName.length < 2 || personName.length > 80) {
-    throw new Error("Informe o nome da colaboradora (entre 2 e 80 caracteres).");
+    throw new Error("Informe o nome (entre 2 e 80 caracteres).");
   }
 
   const link = await loadLinkByToken(token);

@@ -177,7 +177,7 @@ export default function ConnectPage() {
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center gap-1.5">
                   <User className="h-4 w-4 text-muted-foreground" />
-                  Nome da Colaboradora
+                  Nome
                 </Label>
                 <Input
                   id="name"
@@ -235,7 +235,7 @@ export default function ConnectPage() {
           ) : session.status === "awaiting_connection" ? (
             <div className="space-y-4 text-center">
               <div className="text-xs text-muted-foreground bg-muted/30 py-1.5 px-3 rounded-lg border border-border/50 inline-block mx-auto">
-                <span className="font-semibold text-foreground">{personName || "Colaboradora"}</span>
+                <span className="font-semibold text-foreground">{personName || "Nome"}</span>
                 {resolvedUnitName ? ` · ${resolvedUnitName}` : ""}
               </div>
 
@@ -289,7 +289,7 @@ export default function ConnectPage() {
                 text="Seus grupos foram processados e seu WhatsApp já foi desconectado deste sistema com segurança."
               />
               <div className="text-xs text-center text-muted-foreground">
-                Leads vinculados a: <strong>{personName || "Colaboradora"}</strong>
+                Leads vinculados a: <strong>{personName || "Nome"}</strong>
                 {resolvedUnitName ? ` (${resolvedUnitName})` : ""}
               </div>
               <Summary session={session} />
@@ -347,7 +347,7 @@ function ExtractingView({
 
       {(personName || unitName) && (
         <div className="text-xs text-muted-foreground bg-muted/40 py-1 px-3 rounded-md border border-border/50 inline-block">
-          Colaboradora: <strong>{personName || "—"}</strong>
+          Nome: <strong>{personName || "—"}</strong>
           {unitName ? ` · Unidade: ${unitName}` : ""}
         </div>
       )}

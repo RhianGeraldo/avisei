@@ -14,6 +14,7 @@ import {
   Megaphone,
   Users,
   QrCode,
+  Flame,
 } from "lucide-react";
 import {
   Sidebar,
@@ -43,6 +44,7 @@ export function AppSidebar() {
     { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
     { title: "Unidades", url: "/units", icon: Store },
     { title: "Instâncias", url: "/instances", icon: Smartphone },
+    { title: "Aquecedor", url: "/warmer", icon: Flame },
     { title: "Grupos", url: "/groups", icon: Users },
     { title: "Captura de Leads", url: "/lead-capture", icon: QrCode },
     { title: "Base de Leads", url: "/contacts", icon: Users },

@@ -344,7 +344,7 @@ export default function LeadCapturePage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Colaboradora</TableHead>
+                  <TableHead>Nome</TableHead>
                   <TableHead>Unidade</TableHead>
                   <TableHead>Link</TableHead>
                   <TableHead>Status</TableHead>

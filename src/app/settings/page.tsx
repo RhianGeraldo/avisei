@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Sparkles, Bot, Flame, Key } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth-context";
@@ -59,6 +61,8 @@ export default function SettingsPage() {
   const [companyDocument, setCompanyDocument] = useState("");
   const [companyActive, setCompanyActive] = useState(true);
   const [apiToken, setApiToken] = useState("");
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [warmerPrompt, setWarmerPrompt] = useState("");
   const [savingCompany, setSavingCompany] = useState(false);
 
   useEffect(() => {
@@ -66,6 +70,8 @@ export default function SettingsPage() {
     setCompanyDocument(company?.document ?? "");
     setCompanyActive(company?.active ?? true);
     setApiToken((company as any)?.api_token ?? "");
+    setOpenaiApiKey((company as any)?.openai_api_key ?? "");
+    setWarmerPrompt((company as any)?.warmer_prompt ?? "");
   }, [company]);
 
   const onSubmitCompany = async (e: React.FormEvent) => {
@@ -79,6 +85,8 @@ export default function SettingsPage() {
         document: companyDocument.trim() || null,
         active: companyActive,
         api_token: apiToken || null,
+        openai_api_key: openaiApiKey.trim() || null,
+        warmer_prompt: warmerPrompt.trim() || null,
       })
       .eq("id", company.id);
     setSavingCompany(false);
@@ -176,6 +184,82 @@ export default function SettingsPage() {
               {canEditCompany && (
                 <div className="flex justify-end">
                   <Button type="submit" disabled={savingCompany}>Salvar</Button>
+                </div>
+              )}
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="glass">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-amber-500" />
+              <div>
+                <CardTitle>Inteligência Artificial (Aquecedor de Chips)</CardTitle>
+                <CardDescription>
+                  Configure a chave da API para respostas dinâmicas e conversas humanizadas no aquecedor de números.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={onSubmitCompany} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Key className="h-4 w-4 text-muted-foreground" />
+                  Chave de API OpenAI (ou compatível)
+                </Label>
+                <Input
+                  type="password"
+                  placeholder="sk-proj-..."
+                  value={openaiApiKey}
+                  onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  disabled={!canEditCompany}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Suporta chaves padrão OpenAI (modelo gpt-4o-mini). Caso não configure, o sistema usará automaticamente a contingência nativa com centenas de diálogos realistas brasileiros.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1.5">
+                    <Bot className="h-4 w-4 text-muted-foreground" />
+                    Prompt Base do Aquecedor (Opcional)
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-primary h-7 px-2"
+                    onClick={() =>
+                      setWarmerPrompt(
+                        `Você é uma pessoa comum brasileira conversando no WhatsApp com um amigo ou conhecido de trabalho.\nREGRAS OBRIGATÓRIAS:\n- Responda em português brasileiro coloquial, com gírias leves (ex: "mano", "beleza", "tranquilo", "show", "kkk"), estilo mensagem de WhatsApp real.\n- Seja SUPER BREVE: no máximo 1 ou 2 frases curtas. Não escreva textos longos nem parágrafos explicativos.\n- Nunca se identifique como inteligência artificial, robô ou assistente.`
+                      )
+                    }
+                  >
+                    Usar padrão recomendado
+                  </Button>
+                </div>
+                <Textarea
+                  rows={4}
+                  placeholder="Instruções personalizadas de personalidade para a IA durante o aquecimento dos números..."
+                  value={warmerPrompt}
+                  onChange={(e) => setWarmerPrompt(e.target.value)}
+                  disabled={!canEditCompany}
+                  className="text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  A IA utiliza controle anti-looping rigoroso, encerrando a conversa educadamente a partir do 4º turno para evitar repetições contínuas.
+                </p>
+              </div>
+
+              {canEditCompany && (
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={savingCompany}>
+                    Salvar Configurações de IA
+                  </Button>
                 </div>
               )}
             </form>

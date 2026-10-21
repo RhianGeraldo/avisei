@@ -176,7 +176,10 @@ export type Database = {
           document: string | null
           id: string
           name: string
+          openai_api_key: string | null
           updated_at: string
+          warmer_prompt: string | null
+          warmer_settings: Json | null
         }
         Insert: {
           active?: boolean
@@ -185,7 +188,10 @@ export type Database = {
           document?: string | null
           id?: string
           name: string
+          openai_api_key?: string | null
           updated_at?: string
+          warmer_prompt?: string | null
+          warmer_settings?: Json | null
         }
         Update: {
           active?: boolean
@@ -194,7 +200,10 @@ export type Database = {
           document?: string | null
           id?: string
           name?: string
+          openai_api_key?: string | null
           updated_at?: string
+          warmer_prompt?: string | null
+          warmer_settings?: Json | null
         }
         Relationships: []
       }
@@ -852,6 +861,242 @@ export type Database = {
             referencedRelation: "units"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      warmer_numbers: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          phone_number: string | null
+          evogo_instance_name: string
+          evogo_instance_id: string | null
+          evogo_api_key: string | null
+          status: string
+          profile_picture_url: string | null
+          profile_name: string | null
+          current_day: number
+          health_score: number
+          messages_sent_today: number
+          messages_received_today: number
+          total_messages_sent: number
+          total_messages_received: number
+          last_activity_at: string | null
+          cooldown_until: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          phone_number?: string | null
+          evogo_instance_name: string
+          evogo_instance_id?: string | null
+          evogo_api_key?: string | null
+          status?: string
+          profile_picture_url?: string | null
+          profile_name?: string | null
+          current_day?: number
+          health_score?: number
+          messages_sent_today?: number
+          messages_received_today?: number
+          total_messages_sent?: number
+          total_messages_received?: number
+          last_activity_at?: string | null
+          cooldown_until?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          phone_number?: string | null
+          evogo_instance_name?: string
+          evogo_instance_id?: string | null
+          evogo_api_key?: string | null
+          status?: string
+          profile_picture_url?: string | null
+          profile_name?: string | null
+          current_day?: number
+          health_score?: number
+          messages_sent_today?: number
+          messages_received_today?: number
+          total_messages_sent?: number
+          total_messages_received?: number
+          last_activity_at?: string | null
+          cooldown_until?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warmer_numbers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      warmer_dialogs: {
+        Row: {
+          id: string
+          company_id: string
+          initiator_number_id: string
+          responder_number_id: string
+          status: string
+          topic: string | null
+          turn_count: number
+          max_turns: number
+          next_turn_by: string
+          next_message_at: string
+          last_message_content: string | null
+          created_at: string
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          initiator_number_id: string
+          responder_number_id: string
+          status?: string
+          topic?: string | null
+          turn_count?: number
+          max_turns?: number
+          next_turn_by: string
+          next_message_at?: string
+          last_message_content?: string | null
+          created_at?: string
+          completed_at?: string | null
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          initiator_number_id?: string
+          responder_number_id?: string
+          status?: string
+          topic?: string | null
+          turn_count?: number
+          max_turns?: number
+          next_turn_by?: string
+          next_message_at?: string
+          last_message_content?: string | null
+          created_at?: string
+          completed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warmer_dialogs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      warmer_groups: {
+        Row: {
+          id: string
+          company_id: string
+          group_jid: string
+          group_name: string
+          invite_link: string | null
+          creator_number_id: string | null
+          members_count: number
+          last_interaction_at: string | null
+          next_interaction_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          group_jid: string
+          group_name: string
+          invite_link?: string | null
+          creator_number_id?: string | null
+          members_count?: number
+          last_interaction_at?: string | null
+          next_interaction_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          group_jid?: string
+          group_name?: string
+          invite_link?: string | null
+          creator_number_id?: string | null
+          members_count?: number
+          last_interaction_at?: string | null
+          next_interaction_at?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warmer_groups_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      warmer_messages: {
+        Row: {
+          id: string
+          company_id: string
+          dialog_id: string | null
+          group_id: string | null
+          from_number_id: string
+          to_number_id: string | null
+          from_phone: string | null
+          to_phone: string | null
+          to_jid: string | null
+          content: string
+          message_type: string
+          turn_index: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          dialog_id?: string | null
+          group_id?: string | null
+          from_number_id: string
+          to_number_id?: string | null
+          from_phone?: string | null
+          to_phone?: string | null
+          to_jid?: string | null
+          content: string
+          message_type?: string
+          turn_index?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          dialog_id?: string | null
+          group_id?: string | null
+          from_number_id?: string
+          to_number_id?: string | null
+          from_phone?: string | null
+          to_phone?: string | null
+          to_jid?: string | null
+          content?: string
+          message_type?: string
+          turn_index?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warmer_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          }
         ]
       }
     }
