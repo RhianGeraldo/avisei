@@ -65,6 +65,28 @@ export async function graduateNumberAction(numberId: string) {
   }
 }
 
+export async function updateChipTogglesAction(
+  numberId: string,
+  toggles: {
+    enable_dialogs?: boolean;
+    enable_groups?: boolean;
+    enable_status?: boolean;
+    enable_external?: boolean;
+  }
+) {
+  try {
+    const { error } = await supabaseAdmin
+      .from("warmer_numbers")
+      .update({ ...toggles, updated_at: new Date().toISOString() })
+      .eq("id", numberId);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function runWarmerTickAction() {
   try {
     const stats = await processWarmerTick({ force: true });

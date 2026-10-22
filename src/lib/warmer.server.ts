@@ -573,7 +573,14 @@ REGRAS OBRIGATÓRIAS:
       if (res.ok) {
         const data = await res.json();
         const text = data?.choices?.[0]?.message?.content?.trim();
-        if (text) return text.replace(/^["']|["']$/g, "");
+        if (text) {
+          let cleaned = text.replace(/^["']|["']$/g, "").trim();
+          // Trava Anti-Looping: o último turno nunca pode ter interrogações
+          if (isClosing && cleaned.includes("?")) {
+            cleaned = cleaned.split("?")[0].replace(/[.,;!]+$/, "") + ". Fechou mano, bom trabalho aí, abraço!";
+          }
+          return cleaned;
+        }
       }
     } catch (err) {
       console.warn("[warmer] Falha na chamada da OpenAI, usando contingência nativa:", err);
@@ -588,7 +595,11 @@ REGRAS OBRIGATÓRIAS:
   if (turnIndex === 0) return pick.t1;
   if (turnIndex === 1) return pick.t2;
   if (turnIndex === 2) return pick.t3;
-  return pick.t4;
+  let finalTurn = pick.t4;
+  if (isClosing && finalTurn.includes("?")) {
+    finalTurn = finalTurn.split("?")[0].replace(/[.,;!]+$/, "") + ". Fechou mano, até mais!";
+  }
+  return finalTurn;
 }
 
 // =====================================================================
@@ -655,7 +666,11 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
     .eq("company_id", companyId)
     .in("status", ["warming", "idle"]);
 
-  if (!numbers || numbers.length < 2) return;
+  if (!numbers || numbers.length === 0) return;
+
+  // Apenas chips com módulo de grupos ativado (Liga/Desliga individual)
+  const eligibleGroupNumbers = numbers.filter((n: any) => n.enable_groups !== false);
+  if (eligibleGroupNumbers.length < 2) return;
 
   // Busca se já existe um grupo ativo
   const { data: existingGroup } = await supabaseAdmin
@@ -666,9 +681,9 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
 
   if (!existingGroup) {
     // Cria um novo grupo usando o primeiro número conectado
-    const creator = numbers[0];
+    const creator = eligibleGroupNumbers[0];
     const groupName = `Resenha & Dicas ${Math.floor(Math.random() * 100)}`;
-    const otherPhones = numbers
+    const otherPhones = eligibleGroupNumbers
       .slice(1)
       .map((n: any) => `${(n.phone_number || "").replace(/\D/g, "")}@s.whatsapp.net`)
       .filter((p: string) => !p.startsWith("@"));
@@ -708,7 +723,7 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
         group_name: groupName,
         invite_link: inviteLink,
         creator_number_id: creator.id,
-        members_count: numbers.length,
+        members_count: eligibleGroupNumbers.length,
       });
 
       console.log(`[warmer] Grupo de aquecimento criado: ${groupName} (${groupJid})`);
@@ -720,7 +735,7 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
     const now = new Date();
     const isDue = isForce || !existingGroup.next_interaction_at || new Date(existingGroup.next_interaction_at) <= now;
     if (isDue) {
-      const sender = numbers[Math.floor(Math.random() * numbers.length)];
+      const sender = eligibleGroupNumbers[Math.floor(Math.random() * eligibleGroupNumbers.length)];
       if (sender?.evogo_api_key) {
         const GROUP_PHRASES = [
           "Fala pessoal, tudo bom por aí?",
@@ -758,12 +773,60 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
             .update({
               last_interaction_at: now.toISOString(),
               next_interaction_at: nextInteraction,
-              members_count: numbers.length,
+              members_count: eligibleGroupNumbers.length,
             })
             .eq("id", existingGroup.id);
         } catch (e: any) {
           console.warn("[warmer] Falha na interação de grupo:", e.message);
         }
+      }
+    }
+  }
+}
+
+// =====================================================================
+// 5.1 Motor de Publicação de Status (Stories do WhatsApp)
+// =====================================================================
+
+export async function syncWarmerStatus(companyId: string, isForce: boolean = false) {
+  const { data: numbers } = await supabaseAdmin
+    .from("warmer_numbers")
+    .select("*")
+    .eq("company_id", companyId)
+    .in("status", ["warming", "idle"]);
+
+  if (!numbers || numbers.length === 0) return;
+
+  const eligibleStatusNumbers = numbers.filter((n: any) => n.enable_status !== false && n.evogo_api_key);
+  if (eligibleStatusNumbers.length === 0) return;
+
+  const STATUS_MESSAGES = [
+    "Bom dia! Que a semana seja abençoada e produtiva para todos nós. 🙏☕",
+    "Café na mão e foco no objetivo! Bom dia turma. 🚀",
+    "Foco, força e fé! Excelente dia a todos. ✨",
+    "Pausa para o almoço merecido. 🍽️",
+    "Mais um dia de trabalho vencido, gratidão! 🙌",
+    "Bora que o ano já começou com tudo! 💼",
+    "Desejo uma ótima tarde a todos os amigos e clientes!",
+  ];
+
+  for (const chip of eligibleStatusNumbers) {
+    // Posta com 25% de chance a cada tick ou se for forçado
+    if (isForce || Math.random() < 0.25) {
+      const text = STATUS_MESSAGES[Math.floor(Math.random() * STATUS_MESSAGES.length)];
+      try {
+        await evogoRequest("/send/text", {
+          method: "POST",
+          apiKey: chip.evogo_api_key,
+          body: {
+            number: "status@broadcast",
+            text,
+            delay: 1000,
+          },
+        });
+        console.log(`[warmer] Status postado pelo chip ${chip.name}: "${text}"`);
+      } catch (err: any) {
+        console.warn(`[warmer] Falha ao postar status para ${chip.name}:`, err.message);
       }
     }
   }
@@ -866,6 +929,16 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
             .from("warmer_dialogs")
             .update({ status: "failed" })
             .eq("id", dialog.id);
+          continue;
+        }
+
+        // Se algum dos chips estiver pausado ou com 1x1 desativado, pula este turno
+        if (
+          sender.status === "paused" ||
+          receiver.status === "paused" ||
+          sender.enable_dialogs === false ||
+          receiver.enable_dialogs === false
+        ) {
           continue;
         }
 
@@ -997,7 +1070,10 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     const busyIds = new Set(
       (activeDialogs || []).flatMap((d: any) => [d.initiator_number_id, d.responder_number_id])
     );
-    const trulyFreeNumbers = (freeNumbers || []).filter((n: any) => !busyIds.has(n.id));
+    // Filtra chips que não estão ocupados e que têm enable_dialogs ativado
+    const trulyFreeNumbers = (freeNumbers || []).filter(
+      (n: any) => !busyIds.has(n.id) && n.enable_dialogs !== false
+    );
 
     if (trulyFreeNumbers.length >= 2) {
       // Permite até 2 diálogos simultâneos por empresa para não sobrecarregar
@@ -1098,6 +1174,11 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     // 4. Sincroniza e movimenta grupos de aquecimento
     if (settings.enable_groups) {
       await syncWarmerGroups(comp.id, isForce);
+    }
+
+    // 5. Publicação de Status nos Stories do WhatsApp
+    if (settings.enable_status) {
+      await syncWarmerStatus(comp.id, isForce);
     }
   }
 

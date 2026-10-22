@@ -50,7 +50,10 @@ import {
   CheckCircle2,
   ArrowRight,
   Server,
+  Camera,
+  Globe,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import {
   createNumberAction,
   getNumberQrAction,
@@ -59,6 +62,7 @@ import {
   deleteNumberAction,
   graduateNumberAction,
   runWarmerTickAction,
+  updateChipTogglesAction,
 } from "./actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -105,6 +109,7 @@ export default function WarmerPage() {
   const [graduatingChip, setGraduatingChip] = useState<any | null>(null);
   const [graduating, setGraduating] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [updatingToggleId, setUpdatingToggleId] = useState<string | null>(null);
   const [connectedProfile, setConnectedProfile] = useState<{
     phone?: string;
     profileName?: string;
@@ -257,6 +262,23 @@ export default function WarmerPage() {
       qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
     } else {
       toast.error("Falha ao alterar status: " + res.error);
+    }
+  };
+
+  // Ação: Liga/Desliga individual de módulo do chip (Estilo MaturaGo)
+  const handleToggleModule = async (
+    chipId: string,
+    field: "enable_dialogs" | "enable_groups" | "enable_status" | "enable_external",
+    newValue: boolean
+  ) => {
+    setUpdatingToggleId(`${chipId}-${field}`);
+    const res = await updateChipTogglesAction(chipId, { [field]: newValue });
+    setUpdatingToggleId(null);
+    if (res.success) {
+      toast.success("Módulo do chip atualizado!");
+      qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
+    } else {
+      toast.error("Falha ao atualizar módulo: " + res.error);
     }
   };
 
@@ -570,6 +592,74 @@ export default function WarmerPage() {
                             <span className="font-semibold text-foreground">
                               {chip.total_messages_sent || 0} trocadas
                             </span>
+                          </div>
+                        </div>
+
+                        {/* Controles de Módulos (Liga/Desliga estilo MaturaGo) */}
+                        <div className="space-y-2 pt-1 border-t border-border/40">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                              Módulos de Aquecimento
+                            </span>
+                            {isPaused && (
+                              <span className="text-[10px] text-muted-foreground italic">
+                                (Pausado geral)
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
+                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                                <MessageSquare className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                1x1 Diálogos
+                              </span>
+                              <Switch
+                                checked={chip.enable_dialogs !== false}
+                                onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_dialogs", checked)}
+                                disabled={isPaused || updatingToggleId === `${chip.id}-enable_dialogs`}
+                                className="scale-75 origin-right"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
+                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                                <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                Grupos
+                              </span>
+                              <Switch
+                                checked={chip.enable_groups !== false}
+                                onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_groups", checked)}
+                                disabled={isPaused || updatingToggleId === `${chip.id}-enable_groups`}
+                                className="scale-75 origin-right"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
+                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                                <Camera className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                                Status
+                              </span>
+                              <Switch
+                                checked={chip.enable_status !== false}
+                                onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_status", checked)}
+                                disabled={isPaused || updatingToggleId === `${chip.id}-enable_status`}
+                                className="scale-75 origin-right"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
+                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                                <Globe className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                Rede Fora
+                              </span>
+                              <Switch
+                                checked={chip.enable_external !== false}
+                                onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_external", checked)}
+                                disabled={isPaused || updatingToggleId === `${chip.id}-enable_external`}
+                                className="scale-75 origin-right"
+                              />
+                            </div>
                           </div>
                         </div>
 
