@@ -100,7 +100,8 @@ export default function WarmerPage() {
   const [activeQrChipId, setActiveQrChipId] = useState<string | null>(null);
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [runningTick, setRunningTick] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [chipToDelete, setChipToDelete] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [graduatingChip, setGraduatingChip] = useState<any | null>(null);
   const [graduating, setGraduating] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
@@ -259,14 +260,15 @@ export default function WarmerPage() {
     }
   };
 
-  // Ação: Excluir Chip
-  const handleDelete = async (chipId: string) => {
-    if (!confirm("Tem certeza que deseja remover este chip do aquecedor?")) return;
-    setDeletingId(chipId);
-    const res = await deleteNumberAction(chipId);
-    setDeletingId(null);
+  // Ação: Confirmar Exclusão de Chip do Aquecedor
+  const handleConfirmDelete = async () => {
+    if (!chipToDelete) return;
+    setIsDeleting(true);
+    const res = await deleteNumberAction(chipToDelete.id);
+    setIsDeleting(false);
     if (res.success) {
-      toast.success("Chip removido do aquecedor.");
+      toast.success(`Chip "${chipToDelete.name}" removido do aquecedor.`);
+      setChipToDelete(null);
       qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
     } else {
       toast.error("Falha ao excluir: " + res.error);
@@ -632,9 +634,9 @@ export default function WarmerPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive/70 hover:text-destructive shrink-0"
-                            onClick={() => handleDelete(chip.id)}
-                            disabled={deletingId === chip.id}
+                            className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            onClick={() => setChipToDelete(chip)}
+                            title="Remover chip do aquecedor"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -962,6 +964,93 @@ export default function WarmerPage() {
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                   Aguardando leitura do WhatsApp...
                 </p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal: Confirmação de Exclusão de Chip */}
+        <Dialog open={!!chipToDelete} onOpenChange={(open) => !open && !isDeleting && setChipToDelete(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="h-5 w-5" />
+                Remover Chip do Aquecedor
+              </DialogTitle>
+              <DialogDescription>
+                Tem certeza que deseja excluir esta instância de aquecimento?
+              </DialogDescription>
+            </DialogHeader>
+
+            {chipToDelete && (
+              <div className="space-y-4 pt-1">
+                <div className="bg-muted/40 p-3 rounded-lg border text-sm space-y-2">
+                  <div className="flex items-center gap-3 pb-2 border-b border-border/50">
+                    <Avatar className="h-10 w-10 border border-border/60 shrink-0">
+                      <AvatarImage src={chipToDelete.profile_picture_url || undefined} alt={chipToDelete.profile_name || chipToDelete.name} />
+                      <AvatarFallback className="bg-destructive/15 text-destructive font-semibold text-xs">
+                        {(chipToDelete.profile_name || chipToDelete.name || "W").slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm truncate">{chipToDelete.name}</p>
+                      {chipToDelete.profile_name && (
+                        <p className="text-xs text-muted-foreground truncate">{chipToDelete.profile_name}</p>
+                      )}
+                      <p className="text-[11px] font-mono text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <Server className="h-3 w-3 text-amber-500 opacity-80" />
+                        {chipToDelete.evogo_instance_name}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Telefone conectado:</span>
+                    <span className="font-mono font-medium">
+                      {chipToDelete.phone_number ? `+${chipToDelete.phone_number}` : "Não conectado"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Mensagens trocadas:</span>
+                    <span className="font-medium">
+                      {(chipToDelete.total_messages_sent || 0) + (chipToDelete.total_messages_received || 0)} msgs
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 text-xs text-destructive space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    Atenção: Ação Irreversível
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Ao confirmar, a instância vinculada no EvoGo será excluída, a conexão do WhatsApp será encerrada e todos os diálogos pendentes deste chip serão cancelados.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setChipToDelete(null)}
+                    disabled={isDeleting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleConfirmDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Removendo...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4 mr-1.5" /> Confirmar Exclusão
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>
