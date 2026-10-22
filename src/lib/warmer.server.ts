@@ -788,17 +788,17 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
 // 5.1 Motor de Publicação de Status (Stories do WhatsApp)
 // =====================================================================
 
-export async function syncWarmerStatus(companyId: string, isForce: boolean = false) {
+export async function syncWarmerStatus(companyId: string, isForce: boolean = false): Promise<number> {
   const { data: numbers } = await supabaseAdmin
     .from("warmer_numbers")
     .select("*")
     .eq("company_id", companyId)
     .in("status", ["warming", "idle"]);
 
-  if (!numbers || numbers.length === 0) return;
+  if (!numbers || numbers.length === 0) return 0;
 
   const eligibleStatusNumbers = numbers.filter((n: any) => n.enable_status !== false && n.evogo_api_key);
-  if (eligibleStatusNumbers.length === 0) return;
+  if (eligibleStatusNumbers.length === 0) return 0;
 
   const STATUS_MESSAGES = [
     "Bom dia! Que a semana seja abençoada e produtiva para todos nós. 🙏☕",
@@ -809,6 +809,8 @@ export async function syncWarmerStatus(companyId: string, isForce: boolean = fal
     "Bora que o ano já começou com tudo! 💼",
     "Desejo uma ótima tarde a todos os amigos e clientes!",
   ];
+
+  let statusPosts = 0;
 
   for (const chip of eligibleStatusNumbers) {
     // Posta com 25% de chance a cada tick ou se for forçado
@@ -824,12 +826,37 @@ export async function syncWarmerStatus(companyId: string, isForce: boolean = fal
             delay: 1000,
           },
         });
+
+        // Registra o status no feed de mensagens
+        await supabaseAdmin.from("warmer_messages").insert({
+          company_id: companyId,
+          from_number_id: chip.id,
+          from_phone: chip.phone_number,
+          to_jid: "status@broadcast",
+          content: text,
+          message_type: "status",
+          direction: "outbound",
+        });
+
+        // Atualiza contadores do chip
+        await supabaseAdmin
+          .from("warmer_numbers")
+          .update({
+            messages_sent_today: (chip.messages_sent_today || 0) + 1,
+            total_messages_sent: (chip.total_messages_sent || 0) + 1,
+            last_activity_at: new Date().toISOString(),
+          })
+          .eq("id", chip.id);
+
+        statusPosts++;
         console.log(`[warmer] Status postado pelo chip ${chip.name}: "${text}"`);
       } catch (err: any) {
         console.warn(`[warmer] Falha ao postar status para ${chip.name}:`, err.message);
       }
     }
   }
+
+  return statusPosts;
 }
 
 // =====================================================================
@@ -840,6 +867,7 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
   processedDialogs: number;
   newDialogsStarted: number;
   groupInteractions: number;
+  statusPosts: number;
 }> {
   const isForce = Boolean(options?.force);
   const now = new Date();
@@ -851,12 +879,13 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     .select("id, warmer_settings, openai_api_key, warmer_prompt");
 
   if (!companies || companies.length === 0) {
-    return { processedDialogs: 0, newDialogsStarted: 0, groupInteractions: 0 };
+    return { processedDialogs: 0, newDialogsStarted: 0, groupInteractions: 0, statusPosts: 0 };
   }
 
   let processedDialogs = 0;
   let newDialogsStarted = 0;
   let groupInteractions = 0;
+  let statusPosts = 0;
 
   for (const comp of companies) {
     const settings: WarmerSettings = {
@@ -1178,9 +1207,9 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
 
     // 5. Publicação de Status nos Stories do WhatsApp
     if (settings.enable_status) {
-      await syncWarmerStatus(comp.id, isForce);
+      statusPosts += await syncWarmerStatus(comp.id, isForce);
     }
   }
 
-  return { processedDialogs, newDialogsStarted, groupInteractions };
+  return { processedDialogs, newDialogsStarted, groupInteractions, statusPosts };
 }

@@ -918,8 +918,12 @@ export default function WarmerPage() {
                               <Badge variant="outline" className="text-xs gap-1">
                                 <Users className="h-3 w-3" /> Grupo
                               </Badge>
+                            ) : m.message_type === "status" || m.to_jid === "status@broadcast" ? (
+                              <Badge variant="outline" className="text-xs gap-1 text-purple-600 border-purple-500/30 bg-purple-500/10">
+                                <Camera className="h-3 w-3" /> Status WhatsApp
+                              </Badge>
                             ) : (
-                              m.to_num?.name || m.to_phone || "Chip"
+                              m.to_num?.name || (m.to_phone ? `+${m.to_phone}` : "1x1 Direto")
                             )}
                           </TableCell>
                           <TableCell className="text-sm max-w-md truncate">
