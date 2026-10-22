@@ -608,9 +608,9 @@ export default function WarmerPage() {
                             )}
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
-                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                          <div className="grid grid-cols-3 gap-1.5 text-xs">
+                            <div className="flex flex-col items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-2 rounded-md border border-border/40 text-center gap-1.5">
+                              <span className="flex items-center gap-1 text-[11px] font-medium text-foreground">
                                 <MessageSquare className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                                 1x1 Diálogos
                               </span>
@@ -618,12 +618,12 @@ export default function WarmerPage() {
                                 checked={chip.enable_dialogs !== false}
                                 onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_dialogs", checked)}
                                 disabled={isPaused || updatingToggleId === `${chip.id}-enable_dialogs`}
-                                className="scale-75 origin-right"
+                                className="scale-75"
                               />
                             </div>
 
-                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
-                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                            <div className="flex flex-col items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-2 rounded-md border border-border/40 text-center gap-1.5">
+                              <span className="flex items-center gap-1 text-[11px] font-medium text-foreground">
                                 <Users className="h-3.5 w-3.5 text-blue-500 shrink-0" />
                                 Grupos
                               </span>
@@ -631,25 +631,12 @@ export default function WarmerPage() {
                                 checked={chip.enable_groups !== false}
                                 onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_groups", checked)}
                                 disabled={isPaused || updatingToggleId === `${chip.id}-enable_groups`}
-                                className="scale-75 origin-right"
+                                className="scale-75"
                               />
                             </div>
 
-                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
-                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
-                                <Camera className="h-3.5 w-3.5 text-purple-500 shrink-0" />
-                                Status
-                              </span>
-                              <Switch
-                                checked={chip.enable_status !== false}
-                                onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_status", checked)}
-                                disabled={isPaused || updatingToggleId === `${chip.id}-enable_status`}
-                                className="scale-75 origin-right"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-1.5 px-2.5 rounded-md border border-border/40">
-                              <span className="flex items-center gap-1.5 text-[11px] font-medium">
+                            <div className="flex flex-col items-center justify-between bg-muted/40 hover:bg-muted/60 transition-colors p-2 rounded-md border border-border/40 text-center gap-1.5">
+                              <span className="flex items-center gap-1 text-[11px] font-medium text-foreground">
                                 <Globe className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                                 Rede Fora
                               </span>
@@ -657,7 +644,7 @@ export default function WarmerPage() {
                                 checked={chip.enable_external !== false}
                                 onCheckedChange={(checked) => handleToggleModule(chip.id, "enable_external", checked)}
                                 disabled={isPaused || updatingToggleId === `${chip.id}-enable_external`}
-                                className="scale-75 origin-right"
+                                className="scale-75"
                               />
                             </div>
                           </div>

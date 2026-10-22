@@ -865,7 +865,6 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
   processedDialogs: number;
   newDialogsStarted: number;
   groupInteractions: number;
-  statusPosts: number;
 }> {
   const isForce = Boolean(options?.force);
   const now = new Date();
@@ -877,13 +876,12 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     .select("id, warmer_settings, openai_api_key, warmer_prompt");
 
   if (!companies || companies.length === 0) {
-    return { processedDialogs: 0, newDialogsStarted: 0, groupInteractions: 0, statusPosts: 0 };
+    return { processedDialogs: 0, newDialogsStarted: 0, groupInteractions: 0 };
   }
 
   let processedDialogs = 0;
   let newDialogsStarted = 0;
   let groupInteractions = 0;
-  let statusPosts = 0;
 
   for (const comp of companies) {
     const settings: WarmerSettings = {
@@ -1202,12 +1200,7 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     if (settings.enable_groups) {
       await syncWarmerGroups(comp.id, isForce);
     }
-
-    // 5. Publicação de Status nos Stories do WhatsApp
-    if (settings.enable_status) {
-      statusPosts += await syncWarmerStatus(comp.id, isForce);
-    }
   }
 
-  return { processedDialogs, newDialogsStarted, groupInteractions, statusPosts };
+  return { processedDialogs, newDialogsStarted, groupInteractions };
 }
