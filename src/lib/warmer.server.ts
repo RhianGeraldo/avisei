@@ -817,13 +817,11 @@ export async function syncWarmerStatus(companyId: string, isForce: boolean = fal
     if (isForce || Math.random() < 0.25) {
       const text = STATUS_MESSAGES[Math.floor(Math.random() * STATUS_MESSAGES.length)];
       try {
-        await evogoRequest("/send/text", {
+        await evogoRequest("/send/status/text", {
           method: "POST",
           apiKey: chip.evogo_api_key,
           body: {
-            number: "status@broadcast",
             text,
-            delay: 1000,
           },
         });
 
