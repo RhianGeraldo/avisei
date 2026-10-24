@@ -680,73 +680,93 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
     .maybeSingle();
 
   if (!existingGroup) {
-    // Cria um novo grupo usando o primeiro número conectado
-    const creator = eligibleGroupNumbers[0];
+    // Tenta criar o grupo utilizando o primeiro chip com sessão ativa
     const groupName = `Resenha & Dicas ${Math.floor(Math.random() * 100)}`;
-    const otherPhones = eligibleGroupNumbers
-      .slice(1)
-      .map((n: any) => `${(n.phone_number || "").replace(/\D/g, "")}@s.whatsapp.net`)
-      .filter((p: string) => !p.startsWith("@"));
+    let created: any = null;
+    let actualCreator: any = null;
 
-    if (otherPhones.length === 0) return;
+    for (const potentialCreator of eligibleGroupNumbers) {
+      const otherPhones = eligibleGroupNumbers
+        .filter((n: any) => n.id !== potentialCreator.id)
+        .map((n: any) => {
+          let digits = (n.phone_number || "").replace(/\D/g, "");
+          if (digits.length === 10 || digits.length === 11) {
+            digits = `55${digits}`;
+          }
+          return `${digits}@s.whatsapp.net`;
+        })
+        .filter((p: string) => !p.startsWith("@"));
 
-    try {
-      const created = await evogoRequest("/group/create", {
-        method: "POST",
-        apiKey: creator.evogo_api_key,
-        body: {
-          groupName,
-          name: groupName,
-          participants: otherPhones,
-        },
-      });
+      if (otherPhones.length === 0) continue;
 
-      const groupJid = created?.group?.jid || created?.jid || created?.id;
-      if (!groupJid) return;
-
-      // Obtém o link de convite do grupo
-      let inviteLink = null;
       try {
-        const linkRes = await evogoRequest("/group/invitelink", {
+        created = await evogoRequest("/group/create", {
           method: "POST",
-          apiKey: creator.evogo_api_key,
-          body: { groupJid },
+          apiKey: potentialCreator.evogo_api_key,
+          body: {
+            groupName,
+            name: groupName,
+            participants: otherPhones,
+          },
         });
-        inviteLink = linkRes?.link || linkRes?.inviteLink || null;
-      } catch (e) {
-        console.warn("[warmer] Não foi possível gerar link de convite para o grupo:", e);
+
+        const jid = created?.group?.jid || created?.jid || created?.id;
+        if (jid) {
+          actualCreator = potentialCreator;
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`[warmer] Falha ao criar grupo via ${potentialCreator.name}:`, err.message);
       }
-
-      await supabaseAdmin.from("warmer_groups").insert({
-        company_id: companyId,
-        group_jid: groupJid,
-        group_name: groupName,
-        invite_link: inviteLink,
-        creator_number_id: creator.id,
-        members_count: eligibleGroupNumbers.length,
-      });
-
-      console.log(`[warmer] Grupo de aquecimento criado: ${groupName} (${groupJid})`);
-    } catch (err: any) {
-      console.error("[warmer] Erro ao criar grupo de aquecimento:", err.message);
     }
+
+    if (!created || !actualCreator) return;
+
+    const groupJid = created?.group?.jid || created?.jid || created?.id;
+    if (!groupJid) return;
+
+    // Obtém o link de convite do grupo
+    let inviteLink = null;
+    try {
+      const linkRes = await evogoRequest("/group/invitelink", {
+        method: "POST",
+        apiKey: actualCreator.evogo_api_key,
+        body: { groupJid },
+      });
+      inviteLink = linkRes?.link || linkRes?.inviteLink || null;
+    } catch (e) {
+      console.warn("[warmer] Não foi possível gerar link de convite para o grupo:", e);
+    }
+
+    await supabaseAdmin.from("warmer_groups").insert({
+      company_id: companyId,
+      group_jid: groupJid,
+      group_name: groupName,
+      invite_link: inviteLink,
+      creator_number_id: actualCreator.id,
+      members_count: eligibleGroupNumbers.length,
+    });
+
+    console.log(`[warmer] Grupo de aquecimento criado: ${groupName} (${groupJid})`);
   } else {
     // Grupo existente: envia interação coletiva se o horário estiver vencido ou se for tick forçado
     const now = new Date();
     const isDue = isForce || !existingGroup.next_interaction_at || new Date(existingGroup.next_interaction_at) <= now;
     if (isDue) {
-      const sender = eligibleGroupNumbers[Math.floor(Math.random() * eligibleGroupNumbers.length)];
-      if (sender?.evogo_api_key) {
-        const GROUP_PHRASES = [
-          "Fala pessoal, tudo bom por aí?",
-          "Bom dia a todos!",
-          "Boa tarde turma, como estão as coisas?",
-          "Passando pra desejar um excelente dia pra todo mundo!",
-          "E aí galera, tudo certo?",
-          "Top demais! Bom descanso mais tarde.",
-          "Valeu pessoal, tamo junto!",
-        ];
-        const content = GROUP_PHRASES[Math.floor(Math.random() * GROUP_PHRASES.length)];
+      const GROUP_PHRASES = [
+        "Fala pessoal, tudo bom por aí?",
+        "Bom dia a todos!",
+        "Boa tarde turma, como estão as coisas?",
+        "Passando pra desejar um excelente dia pra todo mundo!",
+        "E aí galera, tudo certo?",
+        "Top demais! Bom descanso mais tarde.",
+        "Valeu pessoal, tamo junto!",
+      ];
+      const content = GROUP_PHRASES[Math.floor(Math.random() * GROUP_PHRASES.length)];
+
+      const shuffledSenders = [...eligibleGroupNumbers].sort(() => 0.5 - Math.random());
+      for (const sender of shuffledSenders) {
+        if (!sender?.evogo_api_key) continue;
 
         try {
           await sendHumanizedMessage({
@@ -776,8 +796,10 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
               members_count: eligibleGroupNumbers.length,
             })
             .eq("id", existingGroup.id);
+
+          break; // Enviou com sucesso, encerra a tentativa
         } catch (e: any) {
-          console.warn("[warmer] Falha na interação de grupo:", e.message);
+          console.warn(`[warmer] Falha na interação de grupo pelo chip ${sender.name}:`, e.message);
         }
       }
     }
@@ -1190,6 +1212,10 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
               processedDialogs++;
             } catch (err: any) {
               console.error(`[warmer] Falha no disparo inicial do diálogo ${createdDialog.id}:`, err.message);
+              await supabaseAdmin
+                .from("warmer_dialogs")
+                .update({ status: "failed" })
+                .eq("id", createdDialog.id);
             }
           }
         }

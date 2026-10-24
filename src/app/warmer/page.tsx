@@ -132,6 +132,7 @@ export default function WarmerPage() {
       }
       return data ?? [];
     },
+    enabled: !!activeCompanyId,
     refetchInterval: 8000,
   });
 
@@ -145,6 +146,7 @@ export default function WarmerPage() {
       if (error) return [];
       return data ?? [];
     },
+    enabled: !!activeCompanyId,
     refetchInterval: 12000,
   });
 
@@ -162,6 +164,7 @@ export default function WarmerPage() {
       if (error) return [];
       return data ?? [];
     },
+    enabled: !!activeCompanyId,
     refetchInterval: 6000,
   });
 
