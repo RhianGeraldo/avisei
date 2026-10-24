@@ -2,6 +2,7 @@
 // Server Actions PÚBLICAS da Captura de Leads (usadas em /conectar/[token]).
 // Toda ação é validada pelo token do link; nenhuma recebe company_id/unit_id do cliente.
 import {
+  deleteLinkSafely,
   getSessionStatus,
   loadLinkByToken,
   startSession,
@@ -49,5 +50,13 @@ export async function getCaptureSessionStatus({
     return { ok: true, session: await getSessionStatus(token, sessionId) };
   } catch (err: any) {
     return { ok: false, error: err?.message || "Falha ao consultar a conexão." };
+  }
+}
+
+export async function deleteCaptureLinkAction({ linkId }: { linkId: string }) {
+  try {
+    return await deleteLinkSafely(linkId);
+  } catch (err: any) {
+    throw new Error(err?.message || "Erro ao excluir link e limpar instâncias.");
   }
 }

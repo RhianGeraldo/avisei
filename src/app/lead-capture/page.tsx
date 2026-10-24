@@ -36,6 +36,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { deleteCaptureLinkAction } from "@/lib/lead-capture";
 import { toast } from "sonner";
 import { Copy, Link2, Loader2, Plus, Trash2, Pencil } from "lucide-react";
 
@@ -134,11 +135,14 @@ export default function LeadCapturePage() {
   };
 
   const resolveCompanyId = async (targetUnitId: string) => {
+    if (companyId) return companyId;
     if (targetUnitId && targetUnitId !== GENERAL) {
       const selectedUnit = units.find((u: any) => u.id === targetUnitId);
       if (selectedUnit?.company_id) return selectedUnit.company_id;
     }
-    if (companyId) return companyId;
+    if (units.length > 0 && (units[0] as any).company_id) {
+      return (units[0] as any).company_id;
+    }
     const { data: firstCompany } = await supabase
       .from("companies")
       .select("id")
@@ -233,11 +237,15 @@ export default function LeadCapturePage() {
   };
 
   const deleteLink = async (id: string) => {
-    const { error } = await supabase.from("lead_capture_links").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else toast.success("Link excluído");
-    qc.invalidateQueries({ queryKey: ["lead-capture-links"] });
-    qc.invalidateQueries({ queryKey: ["lead-capture-sessions"] });
+    try {
+      await deleteCaptureLinkAction({ linkId: id });
+      toast.success("Link excluído!");
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao excluir link");
+    } finally {
+      qc.invalidateQueries({ queryKey: ["lead-capture-links"] });
+      qc.invalidateQueries({ queryKey: ["lead-capture-sessions"] });
+    }
   };
 
   return (

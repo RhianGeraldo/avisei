@@ -63,10 +63,14 @@ export default function ConnectPage() {
       if (info.valid && savedId) {
         const res = await getCaptureSessionStatus({ token, sessionId: savedId });
         if (res.ok) {
-          if (res.session.status === "awaiting_connection" || res.session.status === "extracting") {
+          if (
+            res.session.status === "awaiting_connection" ||
+            res.session.status === "extracting" ||
+            res.session.status === "completed"
+          ) {
             setSession(res.session);
           } else {
-            // Sessão concluída ou expirada: limpa do localStorage para permitir nova conexão com o mesmo link
+            // Sessão expirada ou com erro: limpa do localStorage para permitir nova conexão
             localStorage.removeItem(storageKey);
           }
         } else {

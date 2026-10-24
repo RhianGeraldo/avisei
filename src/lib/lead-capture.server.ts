@@ -21,7 +21,7 @@ import { upsertGroupContacts } from "@/lib/group-leads.server";
 const QR_TIMEOUT_MS = 10 * 60_000; // tempo máximo aguardando a leitura do QR
 const HEARTBEAT_STALE_MS = 5 * 60_000; // extração sem sinal de vida -> retomar
 const GROUP_INFO_DELAY_MS = 1200; // pausa entre chamadas /group/info (evita rate limit)
-const MAX_ACTIVE_SESSIONS_PER_LINK = 5;
+const MAX_ACTIVE_SESSIONS_PER_LINK = 5; // limite seguro de conexões simultâneas por link
 
 export type CaptureStatus =
   | "awaiting_connection"
@@ -133,7 +133,7 @@ export async function startSession(
     .in("status", ["awaiting_connection", "extracting"]);
   if ((count ?? 0) >= MAX_ACTIVE_SESSIONS_PER_LINK) {
     throw new Error(
-      "Há muitas conexões em andamento neste link. Tente novamente em alguns minutos.",
+      "Há muitas pessoas conectando neste link no momento. Aguarde 1 a 2 minutos e tente novamente.",
     );
   }
 
@@ -348,6 +348,9 @@ async function runExtraction(sessionId: string) {
         .maybeSingle();
       unitName = u?.name ?? null;
     }
+    // Pausa inicial para sincronização completa de chats/grupos pelo WhatsApp
+    await sleep(3500);
+
     const rawGroups = await withRetry(() => fetchEvogoGroups({ data: { instanceId } }));
     const groups = normalizeGroupList(rawGroups);
 
@@ -481,4 +484,28 @@ export async function maintainCaptureSessions() {
   for (const s of stuck ?? []) await reclaimAndRun(s.id, "extracting");
 
   return { expired: stale?.length ?? 0, resumed: stuck?.length ?? 0 };
+}
+
+/**
+ * Exclui um link de captura garantindo que quaisquer instâncias ativas
+ * no EvoGo vinculadas às suas sessões sejam devidamente desconectadas e excluídas.
+ */
+export async function deleteLinkSafely(linkId: string) {
+  const { data: activeSessions } = await supabaseAdmin
+    .from("lead_capture_sessions")
+    .select("id, instance_id")
+    .eq("link_id", linkId)
+    .not("instance_id", "is", null);
+
+  for (const session of activeSessions ?? []) {
+    await teardownInstance(session.id, session.instance_id);
+  }
+
+  const { error } = await supabaseAdmin
+    .from("lead_capture_links")
+    .delete()
+    .eq("id", linkId);
+
+  if (error) throw new Error(error.message);
+  return { success: true };
 }

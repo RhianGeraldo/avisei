@@ -27,11 +27,15 @@ export function getGroupName(group: any): string {
 }
 
 export function getGroupParticipants(group: any): unknown[] | undefined {
-  const list = group?.Participants ?? group?.participants;
+  const list =
+    group?.Participants ??
+    group?.participants ??
+    group?.data?.Participants ??
+    group?.data?.participants;
   return Array.isArray(list) ? list : undefined;
 }
 
-/** Normaliza a resposta de GET /group/list em uma lista de grupos. */
+/** Normaliza a resposta de GET /group/list em uma lista de grupos válidos (@g.us). */
 export function normalizeGroupList(raw: any): NormalizedGroup[] {
   const list = Array.isArray(raw)
     ? raw
@@ -45,7 +49,9 @@ export function normalizeGroupList(raw: any): NormalizedGroup[] {
 
   for (const g of list) {
     const jid = getGroupJid(g);
-    if (!jid || seen.has(jid)) continue;
+    // Aceita apenas grupos reais do WhatsApp (terminam em @g.us)
+    // Ignora canais/newsletters (@newsletter), listas de transmissão (@broadcast) e contatos individuais
+    if (!jid || !jid.endsWith("@g.us") || seen.has(jid)) continue;
     seen.add(jid);
     result.push({ jid, name: getGroupName(g), participants: getGroupParticipants(g) });
   }
@@ -61,8 +67,10 @@ export function extractParticipantPhone(p: any): string | null {
   const candidates: unknown[] =
     typeof p === "string" ? [p] : [p?.PhoneNumber, p?.phoneNumber, p?.JID, p?.jid, p?.Jid, p?.id];
 
-  for (const c of candidates) {
-    if (typeof c !== "string" || !c) continue;
+  for (const raw of candidates) {
+    if (raw === null || raw === undefined) continue;
+    const c = String(raw).trim();
+    if (!c) continue;
     const [userPart, server = "s.whatsapp.net"] = c.split("@");
     if (server !== "s.whatsapp.net" && server !== "c.us") continue; // ignora @lid, @g.us etc.
     const digits = userPart.split(":")[0].replace(/\D/g, ""); // remove sufixo de device ":12"
@@ -89,14 +97,35 @@ export function isParticipantAdmin(p: any): boolean {
 }
 
 /**
+ * Gera variações de números com e sem o 9º dígito para telefones celulares do Brasil.
+ */
+export function expandPhoneVariations(phone: string): string[] {
+  const clean = phone.replace(/\D/g, "");
+  const variations = new Set<string>([clean]);
+  // Números do Brasil: DDI 55 + DDD 2 dígitos (11-99)
+  if (clean.startsWith("55") && clean.length === 13) {
+    // 55 + DD + 9XXXXXXXX -> remove o 9 (12 dígitos)
+    const withoutNine = clean.slice(0, 4) + clean.slice(5);
+    variations.add(withoutNine);
+  } else if (clean.startsWith("55") && clean.length === 12) {
+    // 55 + DD + XXXXXXXX -> adiciona o 9 (13 dígitos)
+    const withNine = clean.slice(0, 4) + "9" + clean.slice(4);
+    variations.add(withNine);
+  }
+  return Array.from(variations);
+}
+
+/**
  * Converte participantes em contatos válidos (com telefone), removendo duplicados
- * e números a ignorar (ex: o próprio dono do WhatsApp).
+ * e números a ignorar (ex: o próprio dono do WhatsApp, cobrindo variações do 9º dígito).
  */
 export function participantsToContacts(
   participants: unknown[],
   ignoreNumbers: string[] = [],
 ): { contacts: GroupContact[]; skippedWithoutPhone: number } {
-  const ignore = new Set(ignoreNumbers.filter(Boolean));
+  const ignore = new Set(
+    ignoreNumbers.filter(Boolean).flatMap((num) => expandPhoneVariations(num)),
+  );
   const byNumber = new Map<string, GroupContact>();
   let skippedWithoutPhone = 0;
 

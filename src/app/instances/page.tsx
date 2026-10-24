@@ -100,6 +100,7 @@ export default function InstancesPage() {
       const { data, error } = await supabase
         .from("instances")
         .select("*, units(id, name)")
+        .not("name", "ilike", "Captura %")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as InstanceWithUnit[];
