@@ -27,6 +27,59 @@ const DEFAULT_SETTINGS: WarmerSettings = {
   enable_status: true,
 };
 
+/**
+ * Régua Progressiva de Maturação (Estilo MaturaGo)
+ * Conforme o chip avança nos 14 dias:
+ * 1. O espaçamento (delays) entre turnos DIMINUI (de 90s-240s para 30s-90s)
+ * 2. O tempo de descanso (cooldown) DIMINUI (de 35m-55m para 10m-20m)
+ * 3. O limite seguro de mensagens por dia AUMENTA (de 10-15 até 85+ msgs)
+ */
+export function getMaturationLadderProfile(day: number) {
+  const currentDay = Math.max(1, Math.min(14, day || 1));
+
+  if (currentDay <= 3) {
+    // Fase 1: Chip Novo / Sensível (Delays longos, descanso maior, cota leve)
+    return {
+      phase: "Leve (Chip Inicial)",
+      dailyLimit: 12 + currentDay * 3, // Dia 1: 15, Dia 2: 18, Dia 3: 21
+      minDelaySecs: 90,
+      maxDelaySecs: 240,
+      minCooldownMins: 35,
+      maxCooldownMins: 55,
+    };
+  } else if (currentDay <= 7) {
+    // Fase 2: Aquecimento Moderado
+    return {
+      phase: "Moderado",
+      dailyLimit: 22 + (currentDay - 3) * 5, // Dia 4: 27, Dia 7: 42
+      minDelaySecs: 60,
+      maxDelaySecs: 160,
+      minCooldownMins: 25,
+      maxCooldownMins: 40,
+    };
+  } else if (currentDay <= 10) {
+    // Fase 3: Aquecimento Avançado
+    return {
+      phase: "Avançado",
+      dailyLimit: 45 + (currentDay - 7) * 7, // Dia 8: 52, Dia 10: 66
+      minDelaySecs: 40,
+      maxDelaySecs: 110,
+      minCooldownMins: 15,
+      maxCooldownMins: 30,
+    };
+  } else {
+    // Fase 4: Chip Maduro (Dia 11 a 14+) - Alta cadência, menor espaçamento
+    return {
+      phase: "Maduro",
+      dailyLimit: 68 + (currentDay - 10) * 8, // Dia 14: 100 msgs/dia
+      minDelaySecs: 25,
+      maxDelaySecs: 75,
+      minCooldownMins: 10,
+      maxCooldownMins: 20,
+    };
+  }
+}
+
 // =====================================================================
 // 1. Configurações e Comunicação com o EvoGo
 // =====================================================================
@@ -1078,7 +1131,11 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
 
           // Se atingiu o limite de turnos, ENCERRA A CONVERSA (Prevenção Anti-Looping estrita)
           if (newTurnCount >= dialog.max_turns) {
-            const cooldownMinutes = 20 + Math.floor(Math.random() * 25); // 20 a 45 min
+            // Tempo de descanso progressivo baseado no dia dos chips (diminui conforme o chip amadurece)
+            const ladder = getMaturationLadderProfile(Math.min(sender.current_day || 1, receiver.current_day || 1));
+            const cooldownMinutes =
+              ladder.minCooldownMins +
+              Math.floor(Math.random() * (ladder.maxCooldownMins - ladder.minCooldownMins));
             const cooldownDate = new Date(Date.now() + cooldownMinutes * 60 * 1000).toISOString();
 
             await supabaseAdmin
@@ -1097,12 +1154,13 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
               .update({ cooldown_until: cooldownDate })
               .in("id", [sender.id, receiver.id]);
 
-            console.log(`[warmer] Diálogo ${dialog.id} finalizado com sucesso (${newTurnCount} turnos). Chips em descanso até ${cooldownDate}`);
+            console.log(`[warmer] Diálogo ${dialog.id} finalizado com sucesso (${newTurnCount} turnos). Chips em descanso até ${cooldownDate} (${cooldownMinutes} min)`);
           } else {
-            // Próximo turno: delay humanizado entre 60s e 180s
+            // Próximo turno: delay progressivo (dias avançados respondem mais rápido e com menor espaçamento)
+            const ladder = getMaturationLadderProfile(Math.min(sender.current_day || 1, receiver.current_day || 1));
             const delaySecs =
-              settings.min_delay_seconds +
-              Math.floor(Math.random() * (settings.max_delay_seconds - settings.min_delay_seconds));
+              ladder.minDelaySecs +
+              Math.floor(Math.random() * (ladder.maxDelaySecs - ladder.minDelaySecs));
             const nextTime = new Date(Date.now() + delaySecs * 1000).toISOString();
 
             await supabaseAdmin
@@ -1141,10 +1199,16 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     const busyIds = new Set(
       (activeDialogs || []).flatMap((d: any) => [d.initiator_number_id, d.responder_number_id])
     );
-    // Filtra chips que não estão ocupados e que têm enable_dialogs ativado
-    const trulyFreeNumbers = (freeNumbers || []).filter(
-      (n: any) => !busyIds.has(n.id) && n.enable_dialogs !== false
-    );
+    // Filtra chips que não estão ocupados, com enable_dialogs e que não estouraram a cota diária da fase
+    const trulyFreeNumbers = (freeNumbers || []).filter((n: any) => {
+      if (busyIds.has(n.id)) return false;
+      if (n.enable_dialogs === false) return false;
+      const ladder = getMaturationLadderProfile(n.current_day || 1);
+      if ((n.messages_sent_today || 0) >= ladder.dailyLimit) {
+        return false;
+      }
+      return true;
+    });
 
     if (trulyFreeNumbers.length >= 2) {
       // Permite até 2 diálogos simultâneos por empresa para não sobrecarregar
@@ -1167,10 +1231,11 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
             maxTurns: settings.max_turns_per_dialog,
           });
 
-          // Delay humanizado para a resposta do segundo chip
+          // Delay humanizado progressivo para a resposta do segundo chip (diminui conforme os dias avançam)
+          const ladder = getMaturationLadderProfile(Math.min(n1.current_day || 1, n2.current_day || 1));
           const delaySecs =
-            settings.min_delay_seconds +
-            Math.floor(Math.random() * (settings.max_delay_seconds - settings.min_delay_seconds));
+            ladder.minDelaySecs +
+            Math.floor(Math.random() * (ladder.maxDelaySecs - ladder.minDelaySecs));
           const nextTime = new Date(Date.now() + delaySecs * 1000).toISOString();
 
           // 2. Cria o diálogo já com o turno 1 aguardando a resposta de n2
