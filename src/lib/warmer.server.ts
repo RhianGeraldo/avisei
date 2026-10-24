@@ -672,16 +672,25 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
   const eligibleGroupNumbers = numbers.filter((n: any) => n.enable_groups !== false);
   if (eligibleGroupNumbers.length < 2) return;
 
-  // Busca se já existe um grupo ativo
-  const { data: existingGroup } = await supabaseAdmin
-    .from("warmer_groups")
-    .select("*")
-    .eq("company_id", companyId)
-    .maybeSingle();
+  const now = new Date();
 
-  if (!existingGroup) {
-    // Tenta criar o grupo utilizando o primeiro chip com sessão ativa
-    const groupName = `Resenha & Dicas ${Math.floor(Math.random() * 100)}`;
+  // =====================================================================
+  // 1. REGRA: No máximo 1 grupo criado por dia quando o módulo estiver ativo
+  // =====================================================================
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+  const { data: groupsCreatedToday } = await supabaseAdmin
+    .from("warmer_groups")
+    .select("id, created_at")
+    .eq("company_id", companyId)
+    .gte("created_at", startOfDay)
+    .limit(1);
+
+  const hasGroupCreatedToday = Boolean(groupsCreatedToday && groupsCreatedToday.length > 0);
+
+  if (!hasGroupCreatedToday) {
+    // Tenta criar o grupo do dia utilizando um chip com sessão ativa
+    const groupName = `Resenha & Dicas ${Math.floor(Math.random() * 900) + 100}`;
     let created: any = null;
     let actualCreator: any = null;
 
@@ -720,38 +729,50 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
       }
     }
 
-    if (!created || !actualCreator) return;
+    if (created && actualCreator) {
+      const groupJid = created?.group?.jid || created?.jid || created?.id;
+      if (groupJid) {
+        let inviteLink = null;
+        try {
+          const linkRes = await evogoRequest("/group/invitelink", {
+            method: "POST",
+            apiKey: actualCreator.evogo_api_key,
+            body: { groupJid },
+          });
+          inviteLink = linkRes?.link || linkRes?.inviteLink || null;
+        } catch (e) {
+          console.warn("[warmer] Não foi possível gerar link de convite para o grupo:", e);
+        }
 
-    const groupJid = created?.group?.jid || created?.jid || created?.id;
-    if (!groupJid) return;
+        await supabaseAdmin.from("warmer_groups").insert({
+          company_id: companyId,
+          group_jid: groupJid,
+          group_name: groupName,
+          invite_link: inviteLink,
+          creator_number_id: actualCreator.id,
+          members_count: eligibleGroupNumbers.length,
+          last_interaction_at: now.toISOString(),
+          next_interaction_at: new Date(Date.now() + (45 + Math.floor(Math.random() * 75)) * 60 * 1000).toISOString(),
+        });
 
-    // Obtém o link de convite do grupo
-    let inviteLink = null;
-    try {
-      const linkRes = await evogoRequest("/group/invitelink", {
-        method: "POST",
-        apiKey: actualCreator.evogo_api_key,
-        body: { groupJid },
-      });
-      inviteLink = linkRes?.link || linkRes?.inviteLink || null;
-    } catch (e) {
-      console.warn("[warmer] Não foi possível gerar link de convite para o grupo:", e);
+        console.log(`[warmer] 1 grupo criado hoje: ${groupName} (${groupJid})`);
+      }
     }
+  }
 
-    await supabaseAdmin.from("warmer_groups").insert({
-      company_id: companyId,
-      group_jid: groupJid,
-      group_name: groupName,
-      invite_link: inviteLink,
-      creator_number_id: actualCreator.id,
-      members_count: eligibleGroupNumbers.length,
-    });
+  // =====================================================================
+  // 2. Interações nos grupos existentes ao longo do dia
+  // =====================================================================
+  const { data: allGroups } = await supabaseAdmin
+    .from("warmer_groups")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("next_interaction_at", { ascending: true });
 
-    console.log(`[warmer] Grupo de aquecimento criado: ${groupName} (${groupJid})`);
-  } else {
-    // Grupo existente: envia interação coletiva se o horário estiver vencido ou se for tick forçado
-    const now = new Date();
-    const isDue = isForce || !existingGroup.next_interaction_at || new Date(existingGroup.next_interaction_at) <= now;
+  if (!allGroups || allGroups.length === 0) return;
+
+  for (const group of allGroups) {
+    const isDue = isForce || !group.next_interaction_at || new Date(group.next_interaction_at) <= now;
     if (isDue) {
       const GROUP_PHRASES = [
         "Fala pessoal, tudo bom por aí?",
@@ -761,6 +782,8 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
         "E aí galera, tudo certo?",
         "Top demais! Bom descanso mais tarde.",
         "Valeu pessoal, tamo junto!",
+        "Alguém acompanhou as notícias de hoje?",
+        "Bora que o dia hoje promete!",
       ];
       const content = GROUP_PHRASES[Math.floor(Math.random() * GROUP_PHRASES.length)];
 
@@ -771,18 +794,19 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
         try {
           await sendHumanizedMessage({
             fromApiKey: sender.evogo_api_key,
-            toPhone: existingGroup.group_jid,
+            toPhone: group.group_jid,
             content,
           });
 
           await supabaseAdmin.from("warmer_messages").insert({
             company_id: companyId,
-            group_id: existingGroup.id,
+            group_id: group.id,
             from_number_id: sender.id,
-            to_jid: existingGroup.group_jid,
+            to_jid: group.group_jid,
             from_phone: sender.phone_number,
             content,
             message_type: "text",
+            direction: "outbound",
           });
 
           const nextDelayMinutes = 60 + Math.floor(Math.random() * 120); // 1 a 3 horas
@@ -795,9 +819,9 @@ export async function syncWarmerGroups(companyId: string, isForce: boolean = fal
               next_interaction_at: nextInteraction,
               members_count: eligibleGroupNumbers.length,
             })
-            .eq("id", existingGroup.id);
+            .eq("id", group.id);
 
-          break; // Enviou com sucesso, encerra a tentativa
+          break; // Mensagem disparada com sucesso com este remetente
         } catch (e: any) {
           console.warn(`[warmer] Falha na interação de grupo pelo chip ${sender.name}:`, e.message);
         }
