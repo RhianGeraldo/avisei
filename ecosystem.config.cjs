@@ -3,9 +3,9 @@ module.exports = {
     {
       name: 'avisei',
       script: 'node_modules/next/dist/bin/next',
-      args: 'start',
-      instances: 'max',
-      exec_mode: 'cluster',
+      args: 'start -p 3005',
+      instances: 1,
+      exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
         PORT: 3005
