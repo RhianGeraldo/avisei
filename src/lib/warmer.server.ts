@@ -1298,7 +1298,7 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
       }
     }
 
-    // 3. Sorteia e inicia novos diálogos se houver chips livres fora de cooldown
+    // 3. Sorteia e inicia novos diálogos em malha cruzada (Mesh Network - todos conversam com todos)
     const { data: freeNumbers } = await supabaseAdmin
       .from("warmer_numbers")
       .select("*")
@@ -1316,113 +1316,159 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     const busyIds = new Set(
       (activeDialogs || []).flatMap((d: any) => [d.initiator_number_id, d.responder_number_id])
     );
-    // Filtra chips que não estão ocupados, com enable_dialogs e que não estouraram a cota diária da fase
-    const trulyFreeNumbers = (freeNumbers || []).filter((n: any) => {
+
+    // Filtra chips verdadeiramente livres, com enable_dialogs e com cota diária disponível
+    let trulyFreeNumbers = (freeNumbers || []).filter((n: any) => {
       if (busyIds.has(n.id)) return false;
       if (n.enable_dialogs === false) return false;
-      const ladder = getMaturationLadderProfile(n.current_day || 1);
+      if (!n.phone_number || !n.evogo_api_key) return false;
+      const ladder = getMaturationLadderProfile(n.current_day || 0);
       if ((n.messages_sent_today || 0) >= ladder.dailyLimit) {
         return false;
       }
       return true;
     });
 
-    if (trulyFreeNumbers.length >= 2) {
-      // Permite até 2 diálogos simultâneos por empresa para não sobrecarregar
-      if ((activeDialogs?.length || 0) < 2) {
-        // Embaralha e escolhe 2 números distintos que não estejam já em diálogo ativo
-        const shuffled = trulyFreeNumbers.sort(() => 0.5 - Math.random());
-        const n1 = shuffled[0];
-        const n2 = shuffled[1];
+    // Permite até 3 diálogos simultâneos se houver números suficientes livres
+    const maxConcurrentDialogs = Math.min(3, Math.max(2, Math.floor(((freeNumbers?.length || 0)) / 2)));
+    const dialogSlotsAvailable = maxConcurrentDialogs - (activeDialogs?.length || 0);
 
-        if (n1.id !== n2.id && n1.phone_number && n2.phone_number) {
-          const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
+    if (trulyFreeNumbers.length >= 2 && dialogSlotsAvailable > 0) {
+      // Busca o histórico recente de diálogos para calcular a matriz de interações entre pares
+      const { data: pastDialogs } = await supabaseAdmin
+        .from("warmer_dialogs")
+        .select("initiator_number_id, responder_number_id, created_at")
+        .eq("company_id", comp.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
 
-          // 1. Gera a mensagem de abertura do diálogo (Turno 0)
-          const openingText = await generateAIResponse({
-            apiKey: comp.openai_api_key,
-            customPrompt: comp.warmer_prompt,
+      // Mapa de frequência de conversas entre cada par de chips (A <-> B)
+      const pairInteractionCount = new Map<string, number>();
+      for (const d of pastDialogs || []) {
+        if (d.initiator_number_id && d.responder_number_id) {
+          const key = [d.initiator_number_id, d.responder_number_id].sort().join("<->");
+          pairInteractionCount.set(key, (pairInteractionCount.get(key) || 0) + 1);
+        }
+      }
+
+      // Inicia até dialogSlotsAvailable novos diálogos priorizando pares que NUNCA ou MENOS conversaram
+      for (let slot = 0; slot < dialogSlotsAvailable && trulyFreeNumbers.length >= 2; slot++) {
+        type CandidatePair = { n1: any; n2: any; count: number; score: number };
+        const candidatePairs: CandidatePair[] = [];
+
+        for (let i = 0; i < trulyFreeNumbers.length; i++) {
+          for (let j = i + 1; j < trulyFreeNumbers.length; j++) {
+            const n1 = trulyFreeNumbers[i];
+            const n2 = trulyFreeNumbers[j];
+            const pairKey = [n1.id, n2.id].sort().join("<->");
+            const count = pairInteractionCount.get(pairKey) || 0;
+            // Menor count = maior prioridade. Adiciona jitter suave (0 a 3) para desempatar pares nunca conversados
+            const score = count * 10 + Math.random() * 3;
+            candidatePairs.push({ n1, n2, count, score });
+          }
+        }
+
+        if (candidatePairs.length === 0) break;
+
+        // Ordena para selecionar o par com menos interações anteriores (Mesh Networking)
+        candidatePairs.sort((a, b) => a.score - b.score);
+        const bestPair = candidatePairs[0];
+        const n1 = bestPair.n1;
+        const n2 = bestPair.n2;
+
+        // Remove n1 e n2 de trulyFreeNumbers para não reutilizá-los em outro diálogo simultâneo neste tick
+        trulyFreeNumbers = trulyFreeNumbers.filter((n: any) => n.id !== n1.id && n.id !== n2.id);
+
+        // Registra a interação para ponderar a escolha nos próximos turnos
+        const pairKey = [n1.id, n2.id].sort().join("<->");
+        pairInteractionCount.set(pairKey, (pairInteractionCount.get(pairKey) || 0) + 1);
+
+        const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
+
+        // 1. Gera a mensagem de abertura do diálogo (Turno 0)
+        const openingText = await generateAIResponse({
+          apiKey: comp.openai_api_key,
+          customPrompt: comp.warmer_prompt,
+          topic,
+          history: [],
+          turnIndex: 0,
+          maxTurns: settings.max_turns_per_dialog,
+        });
+
+        // Delay humanizado progressivo para a resposta do segundo chip
+        const ladder = getMaturationLadderProfile(Math.min(n1.current_day || 0, n2.current_day || 0));
+        const delaySecs =
+          ladder.minDelaySecs +
+          Math.floor(Math.random() * (ladder.maxDelaySecs - ladder.minDelaySecs));
+        const nextTime = new Date(Date.now() + delaySecs * 1000).toISOString();
+
+        // 2. Cria o diálogo já com o turno 1 aguardando a resposta de n2
+        const { data: createdDialog } = await supabaseAdmin
+          .from("warmer_dialogs")
+          .insert({
+            company_id: comp.id,
+            initiator_number_id: n1.id,
+            responder_number_id: n2.id,
             topic,
-            history: [],
-            turnIndex: 0,
-            maxTurns: settings.max_turns_per_dialog,
-          });
+            turn_count: 1,
+            max_turns: settings.max_turns_per_dialog,
+            next_turn_by: n2.id,
+            next_message_at: nextTime,
+            last_message_content: openingText,
+          })
+          .select()
+          .single();
 
-          // Delay humanizado progressivo para a resposta do segundo chip (diminui conforme os dias avançam)
-          const ladder = getMaturationLadderProfile(Math.min(n1.current_day || 1, n2.current_day || 1));
-          const delaySecs =
-            ladder.minDelaySecs +
-            Math.floor(Math.random() * (ladder.maxDelaySecs - ladder.minDelaySecs));
-          const nextTime = new Date(Date.now() + delaySecs * 1000).toISOString();
+        if (createdDialog) {
+          newDialogsStarted++;
+          console.log(`[warmer] Nova conversa (Malha Cruzada) iniciada entre ${n1.name} e ${n2.name} sobre "${topic}" (conversas anteriores: ${bestPair.count})`);
 
-          // 2. Cria o diálogo já com o turno 1 aguardando a resposta de n2
-          const { data: createdDialog } = await supabaseAdmin
-            .from("warmer_dialogs")
-            .insert({
+          // 3. Dispara a mensagem de abertura imediatamente!
+          try {
+            await sendHumanizedMessage({
+              fromApiKey: n1.evogo_api_key,
+              toPhone: n2.phone_number,
+              content: openingText,
+            });
+
+            // Registra a mensagem no histórico
+            await supabaseAdmin.from("warmer_messages").insert({
               company_id: comp.id,
-              initiator_number_id: n1.id,
-              responder_number_id: n2.id,
-              topic,
-              turn_count: 1,
-              max_turns: settings.max_turns_per_dialog,
-              next_turn_by: n2.id,
-              next_message_at: nextTime,
-              last_message_content: openingText,
-            })
-            .select()
-            .single();
+              dialog_id: createdDialog.id,
+              from_number_id: n1.id,
+              to_number_id: n2.id,
+              from_phone: n1.phone_number,
+              to_phone: n2.phone_number,
+              content: openingText,
+              turn_index: 0,
+            });
 
-          if (createdDialog) {
-            newDialogsStarted++;
-            console.log(`[warmer] Nova conversa iniciada entre ${n1.name} e ${n2.name} sobre "${topic}"`);
+            // Atualiza contadores dos chips
+            await supabaseAdmin
+              .from("warmer_numbers")
+              .update({
+                messages_sent_today: (n1.messages_sent_today || 0) + 1,
+                total_messages_sent: (n1.total_messages_sent || 0) + 1,
+                last_activity_at: now.toISOString(),
+              })
+              .eq("id", n1.id);
 
-            // 3. Dispara a mensagem de abertura imediatamente!
-            try {
-              await sendHumanizedMessage({
-                fromApiKey: n1.evogo_api_key,
-                toPhone: n2.phone_number,
-                content: openingText,
-              });
+            await supabaseAdmin
+              .from("warmer_numbers")
+              .update({
+                messages_received_today: (n2.messages_received_today || 0) + 1,
+                total_messages_received: (n2.total_messages_received || 0) + 1,
+                last_activity_at: now.toISOString(),
+              })
+              .eq("id", n2.id);
 
-              // Registra a mensagem no histórico
-              await supabaseAdmin.from("warmer_messages").insert({
-                company_id: comp.id,
-                dialog_id: createdDialog.id,
-                from_number_id: n1.id,
-                to_number_id: n2.id,
-                from_phone: n1.phone_number,
-                to_phone: n2.phone_number,
-                content: openingText,
-                turn_index: 0,
-              });
-
-              // Atualiza contadores dos chips
-              await supabaseAdmin
-                .from("warmer_numbers")
-                .update({
-                  messages_sent_today: (n1.messages_sent_today || 0) + 1,
-                  total_messages_sent: (n1.total_messages_sent || 0) + 1,
-                  last_activity_at: now.toISOString(),
-                })
-                .eq("id", n1.id);
-
-              await supabaseAdmin
-                .from("warmer_numbers")
-                .update({
-                  messages_received_today: (n2.messages_received_today || 0) + 1,
-                  total_messages_received: (n2.total_messages_received || 0) + 1,
-                  last_activity_at: now.toISOString(),
-                })
-                .eq("id", n2.id);
-
-              processedDialogs++;
-            } catch (err: any) {
-              console.error(`[warmer] Falha no disparo inicial do diálogo ${createdDialog.id}:`, err.message);
-              await supabaseAdmin
-                .from("warmer_dialogs")
-                .update({ status: "failed" })
-                .eq("id", createdDialog.id);
-            }
+            processedDialogs++;
+          } catch (err: any) {
+            console.error(`[warmer] Falha no disparo inicial do diálogo ${createdDialog.id}:`, err.message);
+            await supabaseAdmin
+              .from("warmer_dialogs")
+              .update({ status: "failed" })
+              .eq("id", createdDialog.id);
           }
         }
       }
