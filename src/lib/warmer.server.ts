@@ -1299,12 +1299,17 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     }
 
     // 3. Sorteia e inicia novos diálogos em malha cruzada (Mesh Network - todos conversam com todos)
-    const { data: freeNumbers } = await supabaseAdmin
+    let freeNumbersQuery = supabaseAdmin
       .from("warmer_numbers")
       .select("*")
       .eq("company_id", comp.id)
-      .in("status", ["warming", "idle"])
-      .or(`cooldown_until.is.null,cooldown_until.lte.${now.toISOString()}`);
+      .in("status", ["warming", "idle"]);
+
+    if (!isForce) {
+      freeNumbersQuery = freeNumbersQuery.or(`cooldown_until.is.null,cooldown_until.lte.${now.toISOString()}`);
+    }
+
+    const { data: freeNumbers } = await freeNumbersQuery;
 
     // Busca quais números já estão engajados em diálogos ativos agora (anti-colisão)
     const { data: activeDialogs } = await supabaseAdmin
@@ -1317,13 +1322,13 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
       (activeDialogs || []).flatMap((d: any) => [d.initiator_number_id, d.responder_number_id])
     );
 
-    // Filtra chips verdadeiramente livres, com enable_dialogs e com cota diária disponível
+    // Filtra chips verdadeiramente livres, com enable_dialogs e com cota diária disponível (se não for forçado)
     let trulyFreeNumbers = (freeNumbers || []).filter((n: any) => {
       if (busyIds.has(n.id)) return false;
       if (n.enable_dialogs === false) return false;
       if (!n.phone_number || !n.evogo_api_key) return false;
       const ladder = getMaturationLadderProfile(n.current_day || 0);
-      if ((n.messages_sent_today || 0) >= ladder.dailyLimit) {
+      if (!isForce && (n.messages_sent_today || 0) >= ladder.dailyLimit) {
         return false;
       }
       return true;
