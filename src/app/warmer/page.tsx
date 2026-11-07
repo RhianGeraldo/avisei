@@ -335,8 +335,8 @@ export default function WarmerPage() {
   const activeChips = chips.filter((c: any) => c.status !== "graduated");
   const graduatedChips = chips.filter((c: any) => c.status === "graduated");
   const totalConnected = activeChips.filter((c: any) => c.status === "warming" || c.status === "idle").length;
-  const totalWarming = activeChips.filter((c: any) => (c.status === "warming" || c.status === "idle") && c.current_day < 14).length;
-  const totalHot = activeChips.filter((c: any) => c.current_day >= 14).length;
+  const totalWarming = activeChips.filter((c: any) => (c.status === "warming" || c.status === "idle") && (c.current_day ?? 0) < 14).length;
+  const totalHot = activeChips.filter((c: any) => (c.current_day ?? 0) >= 14).length;
   const totalGraduated = graduatedChips.length;
   const msgsSentToday = activeChips.reduce((acc: number, c: any) => acc + (c.messages_sent_today || 0), 0);
   const msgsReceivedToday = activeChips.reduce((acc: number, c: any) => acc + (c.messages_received_today || 0), 0);
@@ -415,14 +415,14 @@ export default function WarmerPage() {
 
           <Card className="glass">
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Prontos / Quentes</CardDescription>
+              <CardDescription className="text-xs">Maduros (Dia 14+)</CardDescription>
               <CardTitle className="text-2xl font-bold text-emerald-500 flex items-center justify-between">
                 {totalHot}
                 <ShieldCheck className="h-4 w-4 text-emerald-500 opacity-70" />
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">Prontos p/ transferir</p>
+              <p className="text-xs text-muted-foreground">Aquecimento contínuo</p>
             </CardContent>
           </Card>
 
@@ -512,8 +512,9 @@ export default function WarmerPage() {
                   const isConnected = chip.status === "warming" || chip.status === "idle";
                   const isPaused = chip.status === "paused";
                   const isConnecting = chip.status === "connecting";
-                  const isHot = (chip.current_day || 1) >= 14;
-                  const healthPct = Math.min(100, Math.round(((chip.current_day || 1) / 14) * 100));
+                  const currentDay = chip.current_day ?? 0;
+                  const isHot = currentDay >= 14;
+                  const healthPct = Math.min(100, Math.round((currentDay / 14) * 100));
 
                   return (
                     <Card key={chip.id} className="glass hover:border-primary/40 transition-all flex flex-col justify-between">
@@ -556,9 +557,9 @@ export default function WarmerPage() {
                                 Conectando...
                               </Badge>
                             ) : isHot ? (
-                              <Badge className="bg-emerald-600 text-white gap-1">
-                                <ShieldCheck className="h-3 w-3" />
-                                Aquecido 🔥
+                              <Badge className="bg-emerald-600 text-white gap-1" title="Chip Maduro - Continua aquecendo ativamente todos os dias">
+                                <Flame className="h-3 w-3" />
+                                Maduro (Ativo)
                               </Badge>
                             ) : (
                               <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 gap-1 animate-pulse">
@@ -576,7 +577,7 @@ export default function WarmerPage() {
                           <div className="flex justify-between text-xs text-muted-foreground">
                             <span>Maturidade do Chip</span>
                             <span className="font-medium text-foreground">
-                              Dia {chip.current_day || 1} de 14 ({healthPct}%)
+                              Dia {currentDay} de 14 {currentDay >= 14 ? "(100% · Maduro)" : `(${healthPct}%)`}
                             </span>
                           </div>
                           <Progress value={healthPct} className="h-2" />

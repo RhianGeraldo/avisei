@@ -29,16 +29,28 @@ const DEFAULT_SETTINGS: WarmerSettings = {
 
 /**
  * Régua Progressiva de Maturação (Estilo MaturaGo)
- * Conforme o chip avança nos 14 dias:
- * 1. O espaçamento (delays) entre turnos DIMINUI (de 90s-240s para 30s-90s)
+ * Conforme o chip avança nos dias de aquecimento ativo (Dia 0 a 14+):
+ * 1. O espaçamento (delays) entre turnos DIMINUI (de 90s-240s para 25s-75s)
  * 2. O tempo de descanso (cooldown) DIMINUI (de 35m-55m para 10m-20m)
- * 3. O limite seguro de mensagens por dia AUMENTA (de 10-15 até 85+ msgs)
+ * 3. O limite seguro de mensagens por dia AUMENTA (de 12 até 100 msgs/dia)
+ * NOTA: Ao atingir o Dia 14+, o chip NÃO para de mandar mensagens. Ele continua
+ * aquecendo na capacidade madura máxima segura (100 msgs/dia) indefinidamente.
  */
 export function getMaturationLadderProfile(day: number) {
-  const currentDay = Math.max(1, Math.min(14, day || 1));
+  const currentDay = Math.max(0, day ?? 0);
 
-  if (currentDay <= 3) {
-    // Fase 1: Chip Novo / Sensível (Delays longos, descanso maior, cota leve)
+  if (currentDay === 0) {
+    // Fase 0: Chip Inicial / Primeiro Dia (Delays longos, descanso maior, cota leve)
+    return {
+      phase: "Inicial (Dia 0)",
+      dailyLimit: 12,
+      minDelaySecs: 90,
+      maxDelaySecs: 240,
+      minCooldownMins: 35,
+      maxCooldownMins: 55,
+    };
+  } else if (currentDay <= 3) {
+    // Fase 1: Chip Novo / Sensível
     return {
       phase: "Leve (Chip Inicial)",
       dailyLimit: 12 + currentDay * 3, // Dia 1: 15, Dia 2: 18, Dia 3: 21
@@ -69,9 +81,10 @@ export function getMaturationLadderProfile(day: number) {
     };
   } else {
     // Fase 4: Chip Maduro (Dia 11 a 14+) - Alta cadência, menor espaçamento
+    // Chips no Dia 14+ continuam enviando mensagens normalmente todos os dias!
     return {
-      phase: "Maduro",
-      dailyLimit: 68 + (currentDay - 10) * 8, // Dia 14: 100 msgs/dia
+      phase: "Maduro (Manutenção Contínua)",
+      dailyLimit: 68 + (Math.min(14, currentDay) - 10) * 8, // Dia 14+: 100 msgs/dia
       minDelaySecs: 25,
       maxDelaySecs: 75,
       minCooldownMins: 10,
@@ -301,6 +314,7 @@ export async function createWarmerNumber(companyId?: string | null, name: string
       evogo_instance_id: evogoInstanceId,
       evogo_api_key: instanceToken,
       status: "connecting",
+      current_day: 0,
     })
     .select("*")
     .single();
@@ -988,7 +1002,7 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
       ...(comp.warmer_settings || {}),
     };
 
-    // Atualização diária: avanço da régua de maturação (Dia 1 a 14) e reset de mensagens do dia
+    // 1. Atualização diária: avanço da régua de maturação e reset de mensagens do dia
     const { data: allActiveChips } = await supabaseAdmin
       .from("warmer_numbers")
       .select("*")
@@ -998,22 +1012,22 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
     if (allActiveChips && allActiveChips.length > 0) {
       const todayStr = now.toISOString().slice(0, 10);
       for (const chip of allActiveChips) {
-        const daysSinceCreation = Math.max(
-          1,
-          Math.min(
-            14,
-            Math.floor((now.getTime() - new Date(chip.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1
-          )
-        );
-
         const lastActivityDate = chip.last_activity_at ? chip.last_activity_at.slice(0, 10) : null;
-        const needsDailyReset = lastActivityDate && lastActivityDate !== todayStr;
+        const isNewDay = lastActivityDate && lastActivityDate !== todayStr;
 
         const updates: any = {};
-        if (chip.current_day !== daysSinceCreation) {
-          updates.current_day = daysSinceCreation;
-        }
-        if (needsDailyReset && (chip.messages_sent_today > 0 || chip.messages_received_today > 0)) {
+
+        // Se mudou o dia (meia-noite / primeira atividade do novo dia):
+        if (isNewDay) {
+          // O chip só avança de dia na régua se ele EFETIVAMENTE enviou mensagens no dia anterior!
+          // Se ficou parado, desconectado ou sem enviar nada, ele NÃO avança de dia.
+          if ((chip.messages_sent_today || 0) > 0) {
+            const nextDay = Math.min(14, (chip.current_day ?? 0) + 1);
+            if (chip.current_day !== nextDay) {
+              updates.current_day = nextDay;
+            }
+          }
+          // Reseta contadores do novo dia
           updates.messages_sent_today = 0;
           updates.messages_received_today = 0;
         }
@@ -1023,6 +1037,16 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
         }
       }
     }
+
+    // 1.1 Limpeza de segurança: cancela diálogos que ficaram travados há mais de 25 minutos
+    // Isso evita qualquer possibilidade de deadlock na fila se a conexão cair no meio de um diálogo
+    const staleLimit = new Date(Date.now() - 25 * 60 * 1000).toISOString();
+    await supabaseAdmin
+      .from("warmer_dialogs")
+      .update({ status: "failed", completed_at: now.toISOString() })
+      .eq("company_id", comp.id)
+      .eq("status", "active")
+      .lt("next_message_at", staleLimit);
 
     // Janela de sono noturno: se estiver fora do horário (e não for disparo forçado manual), pula
     if (!isForce && (currentHour < settings.start_hour || currentHour >= settings.end_hour)) {
@@ -1176,7 +1200,15 @@ export async function processWarmerTick(options?: { force?: boolean }): Promise<
 
           processedDialogs++;
         } catch (err: any) {
-          console.error(`[warmer] Falha no envio do diálogo ${dialog.id}:`, err.message);
+          console.error(`[warmer] Falha no envio do diálogo ${dialog.id}:`, err?.message || err);
+          // Falha no envio: encerra o diálogo com status "failed" para liberar os chips e não travar a fila da empresa
+          await supabaseAdmin
+            .from("warmer_dialogs")
+            .update({
+              status: "failed",
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", dialog.id);
         }
       }
     }
