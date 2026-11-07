@@ -9,6 +9,7 @@ import {
   deleteWarmerNumber,
   graduateWarmerNumber,
   processWarmerTick,
+  syncAllWarmerNumbersStatus,
 } from "@/lib/warmer.server";
 
 export async function createNumberAction(params: { companyId?: string | null; name: string }) {
@@ -91,6 +92,15 @@ export async function runWarmerTickAction() {
   try {
     const stats = await processWarmerTick({ force: true });
     return { success: true, stats };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function syncAllWarmerStatusAction(companyId?: string | null) {
+  try {
+    const res = await syncAllWarmerNumbersStatus(companyId);
+    return { success: true, data: res };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

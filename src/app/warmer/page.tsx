@@ -52,6 +52,7 @@ import {
   Server,
   Camera,
   Globe,
+  Radio,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -63,6 +64,7 @@ import {
   graduateNumberAction,
   runWarmerTickAction,
   updateChipTogglesAction,
+  syncAllWarmerStatusAction,
 } from "./actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -314,6 +316,30 @@ export default function WarmerPage() {
     }
   };
 
+  // Ação: Verificar status de conexão de todas as instâncias em lote
+  const [refreshingAllStatus, setRefreshingAllStatus] = useState(false);
+  const handleRefreshAllStatus = async () => {
+    if (chips.length === 0) return;
+    setRefreshingAllStatus(true);
+    toast.info(`Verificando conexão de ${chips.length} instância(s) no WhatsApp...`);
+    const res = await syncAllWarmerStatusAction(companyId);
+    setRefreshingAllStatus(false);
+    qc.invalidateQueries({ queryKey: ["warmer-numbers"] });
+    if (res.success && res.data) {
+      const { connected, disconnected, total } = res.data;
+      if (disconnected === 0) {
+        toast.success(`Todas as ${total} instâncias estão conectadas e prontas!`);
+      } else {
+        toast.warning(
+          `Verificação concluída: ${connected} conectada(s) e ${disconnected} desconectada(s).`,
+          { duration: 5000 }
+        );
+      }
+    } else {
+      toast.error("Falha ao verificar status: " + res.error);
+    }
+  };
+
   // Ação: Concluir / Graduar Chip para transferência
   const handleConfirmGraduate = async () => {
     if (!graduatingChip) return;
@@ -356,7 +382,22 @@ export default function WarmerPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshAllStatus}
+              disabled={refreshingAllStatus || chips.length === 0}
+              className="w-full sm:w-auto"
+              title="Verifica na API do EvoGo se todas as instâncias continuam conectadas no WhatsApp"
+            >
+              {refreshingAllStatus ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin text-primary" />
+              ) : (
+                <Radio className="h-4 w-4 mr-1.5 text-emerald-500" />
+              )}
+              Verificar Conexões
+            </Button>
             <Button
               variant="outline"
               size="sm"

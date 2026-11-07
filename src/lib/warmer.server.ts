@@ -469,6 +469,91 @@ export async function refreshChipProfile(numberId: string) {
   return updated;
 }
 
+/**
+ * Verifica o status de conexão no EvoGo de todas as instâncias em lote
+ * e atualiza no banco (warming vs disconnected) em tempo real.
+ */
+export async function syncAllWarmerNumbersStatus(companyId?: string | null): Promise<{
+  total: number;
+  connected: number;
+  disconnected: number;
+}> {
+  let query = supabaseAdmin
+    .from("warmer_numbers")
+    .select("id, name, evogo_api_key, status, phone_number, profile_name")
+    .neq("status", "graduated");
+
+  if (companyId) {
+    query = query.eq("company_id", companyId);
+  }
+
+  const { data: chips, error } = await query;
+  if (error || !chips || chips.length === 0) {
+    return { total: 0, connected: 0, disconnected: 0 };
+  }
+
+  let connectedCount = 0;
+  let disconnectedCount = 0;
+
+  await Promise.allSettled(
+    chips.map(async (chip: any) => {
+      if (!chip.evogo_api_key) {
+        disconnectedCount++;
+        return;
+      }
+
+      try {
+        const statusRes = await evogoRequest("/instance/status", {
+          method: "GET",
+          apiKey: chip.evogo_api_key,
+          timeoutMs: 5000,
+        });
+
+        const isConnected =
+          statusRes?.connected === true ||
+          statusRes?.data?.Connected === true ||
+          statusRes?.data?.LoggedIn === true ||
+          statusRes?.Connected === true ||
+          statusRes?.LoggedIn === true;
+
+        const profileName = statusRes?.data?.Name || statusRes?.Name || null;
+        const now = new Date().toISOString();
+
+        if (isConnected) {
+          connectedCount++;
+          const newStatus: WarmerStatus = chip.status === "paused" ? "paused" : "warming";
+          const updates: any = { status: newStatus, updated_at: now };
+          if (profileName && !chip.profile_name) updates.profile_name = profileName;
+
+          await supabaseAdmin.from("warmer_numbers").update(updates).eq("id", chip.id);
+        } else {
+          disconnectedCount++;
+          if (chip.status !== "disconnected") {
+            await supabaseAdmin
+              .from("warmer_numbers")
+              .update({ status: "disconnected", updated_at: now })
+              .eq("id", chip.id);
+          }
+        }
+      } catch (err) {
+        disconnectedCount++;
+        if (chip.status !== "disconnected") {
+          await supabaseAdmin
+            .from("warmer_numbers")
+            .update({ status: "disconnected", updated_at: new Date().toISOString() })
+            .eq("id", chip.id);
+        }
+      }
+    })
+  );
+
+  return {
+    total: chips.length,
+    connected: connectedCount,
+    disconnected: disconnectedCount,
+  };
+}
+
 export async function graduateWarmerNumber(numberId: string) {
   const { data: num, error } = await supabaseAdmin
     .from("warmer_numbers")
