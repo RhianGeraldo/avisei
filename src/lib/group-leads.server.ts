@@ -16,12 +16,11 @@ export type GroupOrigin = {
 const CHUNK_SIZE = 150;
 
 /**
- * Upsert em lote direto via Supabase client:
+ * Inserção de contatos em lote direto via Supabase client:
  * - Deduplica contatos da lista de entrada por número
  * - Busca registros existentes por (company_id, number)
- * - Novos contatos são inseridos com o grupo
- * - Contatos existentes recebem o novo grupo no array JSONB (sem duplicar JID)
- * - Preenche unit_id e name se ainda não estavam definidos
+ * - Novos contatos são inseridos com a unidade e o grupo de origem
+ * - Contatos existentes são preservados sem alterações (regra de atribuição ao primeiro cadastro)
  */
 export async function upsertGroupContacts(params: {
   companyId: string;
@@ -77,19 +76,9 @@ export async function upsertGroupContacts(params: {
       const existing = existingMap.get(c.number);
 
       if (existing) {
+        // Regra de negócio: o primeiro que cadastrou é o dono do contato.
+        // Se já existe no sistema, não altera a unidade, não altera o nome e não anexa novos grupos/colaboradoras.
         updated++;
-        const currentGroups: any[] = Array.isArray(existing.groups) ? existing.groups : [];
-        const hasGroup = currentGroups.some((g: any) => g?.jid === group.jid);
-        const mergedGroups = hasGroup ? currentGroups : [...currentGroups, group];
-
-        toUpsert.push({
-          company_id: companyId,
-          number: c.number,
-          name: existing.name || c.name || null,
-          unit_id: existing.unit_id || unitId || null,
-          groups: mergedGroups,
-          updated_at: now,
-        });
       } else {
         inserted++;
         toUpsert.push({
@@ -107,7 +96,7 @@ export async function upsertGroupContacts(params: {
     if (toUpsert.length > 0) {
       const { error: upsertErr } = await supabaseAdmin
         .from("contacts")
-        .upsert(toUpsert, { onConflict: "company_id,number" });
+        .upsert(toUpsert, { onConflict: "company_id,number", ignoreDuplicates: true });
 
       if (upsertErr) {
         throw new Error(`Erro ao gravar leads no banco: ${upsertErr.message}`);
